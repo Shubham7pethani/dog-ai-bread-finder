@@ -1,0 +1,10 @@
+fastapi==0.110.3
+uvicorn[standard]==0.29.0
+python-multipart==0.0.9
+pillow==10.3.0
+
+# NUMPY < 2 (safe)
+numpy==1.26.4
+
+# ONNX Runtime (CPU)
+onnxruntime==1.17.3
