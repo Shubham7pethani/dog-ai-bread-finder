@@ -2,6 +2,6 @@ fastapi
 uvicorn
 onnxruntime
 requests
-numpy
 pillow
 python-multipart
+numpy

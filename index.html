@@ -1,0 +1,104 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Dog Breed AI Finder</title>
+    <style>
+        body { font-family: 'Segoe UI', sans-serif; display: flex; justify-content: center; background-color: #eef2f3; padding: 40px; }
+        .container { background: white; padding: 30px; border-radius: 20px; box-shadow: 0 10px 25px rgba(0,0,0,0.1); width: 100%; max-width: 450px; text-align: center; }
+        h1 { color: #333; margin-bottom: 10px; }
+        p { color: #666; font-size: 14px; }
+        .upload-area { border: 2px dashed #3498db; padding: 20px; border-radius: 15px; margin: 20px 0; cursor: pointer; transition: 0.3s; }
+        .upload-area:hover { background: #f0f9ff; }
+        #preview { width: 100%; border-radius: 10px; display: none; margin-top: 15px; }
+        button { width: 100%; background: #3498db; color: white; border: none; padding: 15px; border-radius: 10px; font-size: 18px; font-weight: bold; cursor: pointer; transition: 0.2s; }
+        button:hover { background: #2980b9; }
+        button:disabled { background: #ccc; cursor: not-allowed; }
+        #result-box { margin-top: 25px; padding: 15px; border-radius: 10px; display: none; }
+        .success { background: #d4edda; color: #155724; border: 1px solid #c3e6cb; }
+        .error { background: #f8d7da; color: #721c24; border: 1px solid #f5c6cb; }
+    </style>
+</head>
+<body>
+
+<div class="container">
+    <h1>🐕 Dog Breed AI</h1>
+    <p>Find out what breed your dog is in seconds.</p>
+
+    <div class="upload-area" onclick="document.getElementById('dogFile').click()">
+        <span>Click to Upload Dog Photo</span>
+        <input type="file" id="dogFile" accept="image/*" style="display: none;">
+        <img id="preview" src="#" alt="Preview">
+    </div>
+
+    <button id="analyzeBtn">Analyze Breed</button>
+
+    <div id="result-box"></div>
+</div>
+
+<script>
+    /** * NOTE: 'dog-ai-bread-finder.railway.internal' only works INSIDE Railway.
+     * To test from your laptop, you MUST use your Public Domain.
+     * Replace the URL below with your 'xxxx.up.railway.app' link.
+     */
+    const API_URL = "https://dog-ai-bread-finder-production.up.railway.app"; 
+
+    const fileInput = document.getElementById('dogFile');
+    const preview = document.getElementById('preview');
+    const analyzeBtn = document.getElementById('analyzeBtn');
+    const resultBox = document.getElementById('result-box');
+
+    // Show image preview
+    fileInput.onchange = evt => {
+        const [file] = fileInput.files;
+        if (file) {
+            preview.src = URL.createObjectURL(file);
+            preview.style.display = 'block';
+            resultBox.style.display = 'none';
+        }
+    }
+
+    // Send to Backend
+    analyzeBtn.onclick = async () => {
+        if (!fileInput.files[0]) {
+            alert("Please upload a photo first!");
+            return;
+        }
+
+        analyzeBtn.disabled = true;
+        analyzeBtn.innerText = "Processing... 🦴";
+        resultBox.style.display = 'none';
+
+        const formData = new FormData();
+        formData.append("file", fileInput.files[0]);
+
+        try {
+            const response = await fetch(`${API_URL}/analyze`, {
+                method: "POST",
+                body: formData
+            });
+
+            if (!response.ok) throw new Error("Server Error: " + response.status);
+
+            const data = await response.json();
+            
+            resultBox.className = "success";
+            resultBox.style.display = "block";
+            resultBox.innerHTML = `<strong>Breed Index:</strong> ${data.class_index} <br> 
+                                   <strong>Confidence:</strong> ${(data.confidence * 100).toFixed(2)}%`;
+
+        } catch (err) {
+            resultBox.className = "error";
+            resultBox.style.display = "block";
+            resultBox.innerText = "Error: Could not connect to API. Make sure your Public Domain is correct!";
+            console.error(err);
+        } finally {
+            analyzeBtn.disabled = false;
+            analyzeBtn.innerText = "Analyze Breed";
+        }
+    };
+</script>
+
+</body>
+</html>
