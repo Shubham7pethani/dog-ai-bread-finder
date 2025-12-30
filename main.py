@@ -23,6 +23,7 @@ MODEL_PATH = MODEL_DIR / "dog_breed.onnx"
 app = FastAPI(title="Dog Breed AI (ONNX)")
 
 # ---------------- CORS Support ----------------
+# This allows your local index.html to talk to Railway
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"], 
@@ -36,17 +37,17 @@ session: ort.InferenceSession | None = None
 # ---------------- Functions ----------------
 
 def download_model():
-    """Downloads model from Hugging Face using official library to avoid 404s."""
+    """Downloads model from your shankar777 profile."""
     if not MODEL_PATH.exists():
-        logger.info("🚀 Starting model download from Hugging Face...")
+        logger.info("🚀 Starting model download from shankar777/dog-breed-onnx...")
         try:
-            # This handles the URL construction and Token automatically
             hf_hub_download(
-                repo_id="Shubham7pethani/dog-breed-onnx",
-                filename="dog_breed.onnx", # <-- DOUBLE CHECK THIS NAME ON HF
+                repo_id="shankar777/dog-breed-onnx", # Corrected username
+                filename="dog_breed.onnx", 
                 token=os.getenv("HF_TOKEN"),
                 local_dir=str(MODEL_DIR),
-                local_dir_use_symlinks=False
+                local_dir_use_symlinks=False,
+                repo_type="model"
             )
             logger.info("✅ Model download complete!")
         except Exception as e:
@@ -60,7 +61,7 @@ def load_session():
     if session is None:
         download_model()
         logger.info("🔄 Loading ONNX session into memory...")
-        # We use CPUExecutionProvider for Railway Free Tier
+        # Railway Free Tier uses CPU
         session = ort.InferenceSession(
             str(MODEL_PATH), 
             providers=["CPUExecutionProvider"]
@@ -80,7 +81,7 @@ def root():
     return {
         "status": "Dog AI is live", 
         "model_loaded": session is not None,
-        "environment": "Railway"
+        "profile": "shankar777"
     }
 
 @app.post("/analyze")
@@ -89,21 +90,19 @@ async def analyze_dog(file: UploadFile = File(...)):
         return {"error": "Model not loaded yet."}
     
     try:
-        # Read and Open Image
         image_bytes = await file.read()
         image = Image.open(io.BytesIO(image_bytes)).convert("RGB")
         
-        # Preprocessing (224x224 is standard for most Dog models)
+        # Preprocessing
         image = image.resize((224, 224))
         img = np.array(image).astype(np.float32) / 255.0
-        img = np.transpose(img, (2, 0, 1)) # HWC to CHW
-        img = np.expand_dims(img, axis=0) # Add batch dimension
+        img = np.transpose(img, (2, 0, 1)) 
+        img = np.expand_dims(img, axis=0) 
         
         # Run Inference
         inputs = {session.get_inputs()[0].name: img}
         outputs = session.run(None, inputs)
         
-        # Post-processing
         probs = outputs[0][0]
         idx = int(np.argmax(probs))
         
@@ -114,9 +113,3 @@ async def analyze_dog(file: UploadFile = File(...)):
     except Exception as e:
         logger.error(f"Analysis error: {e}")
         return {"error": "Failed to process image"}
-
-if __name__ == "__main__":
-    import uvicorn
-    # Railway uses the PORT environment variable
-    port = int(os.environ.get("PORT", 8000))
-    uvicorn.run(app, host="0.0.0.0", port=port)
