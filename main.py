@@ -6,6 +6,7 @@ import numpy as np
 import onnxruntime as ort
 import requests
 from fastapi import FastAPI, UploadFile, File
+from fastapi.middleware.cors import CORSMiddleware
 from PIL import Image
 
 # ---------------- Logging ----------------
@@ -14,15 +15,26 @@ logger = logging.getLogger("dog-ai")
 
 # ---------------- Paths ----------------
 BASE_DIR = Path(__file__).resolve().parent
-# Note: On Railway, /tmp is usually writable. For persistence, use a Volume.
 MODEL_DIR = BASE_DIR / "models"
 MODEL_DIR.mkdir(exist_ok=True)
 MODEL_PATH = MODEL_DIR / "dog_breed.onnx"
 
 # ---------------- Model URL ----------------
-MODEL_URL = "https://huggingface.co/Shubham7pethani/dog-breed-onnx/resolve/main/dog_breed.onnx"
+# I added ?download=true to ensure it pulls the actual file, not the HTML page.
+MODEL_URL = "https://huggingface.co/Shubham7pethani/dog-breed-onnx/resolve/main/dog_breed.onnx?download=true"
 
 app = FastAPI(title="Dog Breed AI (ONNX)")
+
+# ---------------- CORS Support ----------------
+# This allows your local index.html to communicate with the Railway backend
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"], 
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
+
 session: ort.InferenceSession | None = None
 
 def download_model(url: str, dest: Path):
@@ -35,11 +47,14 @@ def download_model(url: str, dest: Path):
         
         # Stream the download so we don't run out of RAM
         with requests.get(url, headers=headers, stream=True) as r:
+            # If this fails with 404, check if the filename on Hugging Face is exactly 'dog_breed.onnx'
             r.raise_for_status()
             with open(dest, "wb") as f:
                 for chunk in r.iter_content(chunk_size=8192):
                     f.write(chunk)
         logger.info("✅ Model download complete!")
+    else:
+        logger.info("Model already exists, skipping download.")
 
 def load_model():
     global session
@@ -60,21 +75,28 @@ def root():
 @app.post("/analyze")
 async def analyze_dog(file: UploadFile = File(...)):
     if session is None:
-        return {"error": "Model not ready"}
+        return {"error": "Model not ready. Please wait a moment for the download to finish."}
     
-    image_bytes = await file.read()
-    image = Image.open(io.BytesIO(image_bytes)).convert("RGB")
-    
-    # Preprocessing
-    image = image.resize((224, 224))
-    img = np.array(image).astype(np.float32) / 255.0
-    img = np.transpose(img, (2, 0, 1)) 
-    img = np.expand_dims(img, axis=0) 
-    
-    inputs = {session.get_inputs()[0].name: img}
-    outputs = session.run(None, inputs)
-    
-    probs = outputs[0][0]
-    idx = int(np.argmax(probs))
-    
-    return {"class_index": idx, "confidence": float(probs[idx])}
+    try:
+        image_bytes = await file.read()
+        image = Image.open(io.BytesIO(image_bytes)).convert("RGB")
+        
+        # Preprocessing (Must match how your model was trained)
+        image = image.resize((224, 224))
+        img = np.array(image).astype(np.float32) / 255.0
+        img = np.transpose(img, (2, 0, 1)) 
+        img = np.expand_dims(img, axis=0) 
+        
+        inputs = {session.get_inputs()[0].name: img}
+        outputs = session.run(None, inputs)
+        
+        probs = outputs[0][0]
+        idx = int(np.argmax(probs))
+        
+        return {
+            "class_index": idx, 
+            "confidence": float(probs[idx])
+        }
+    except Exception as e:
+        logger.error(f"Analysis error: {e}")
+        return {"error": str(e)}
