@@ -3,129 +3,74 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Dog Breed AI Finder</title>
+    <title>Dog Breed AI 120</title>
     <style>
-        body { font-family: 'Segoe UI', sans-serif; display: flex; justify-content: center; background-color: #eef2f3; padding: 40px; }
-        .container { background: white; padding: 30px; border-radius: 20px; box-shadow: 0 10px 25px rgba(0,0,0,0.1); width: 100%; max-width: 450px; text-align: center; }
-        h1 { color: #333; margin-bottom: 10px; }
-        p { color: #666; font-size: 14px; }
-        .upload-area { border: 2px dashed #3498db; padding: 20px; border-radius: 15px; margin: 20px 0; cursor: pointer; transition: 0.3s; }
-        .upload-area:hover { background: #f0f9ff; }
-        #preview { width: 100%; border-radius: 10px; display: none; margin-top: 15px; border: 1px solid #ddd; }
-        button { width: 100%; background: #3498db; color: white; border: none; padding: 15px; border-radius: 10px; font-size: 18px; font-weight: bold; cursor: pointer; transition: 0.2s; }
-        button:hover { background: #2980b9; }
-        button:disabled { background: #ccc; cursor: not-allowed; }
-        #result-box { margin-top: 25px; padding: 20px; border-radius: 10px; display: none; text-align: left; line-height: 1.6; }
-        .success { background: #e8f5e9; color: #2e7d32; border: 1px solid #c8e6c9; }
-        .error { background: #ffebee; color: #c62828; border: 1px solid #ffcdd2; }
-        .breed-name { font-size: 22px; display: block; margin-bottom: 5px; font-weight: bold; color: #1b5e20; }
-        .stat-line { font-size: 15px; color: #444; }
+        body { font-family: 'Segoe UI', sans-serif; display: flex; justify-content: center; background-color: #f4f7f6; padding: 20px; }
+        .card { background: white; padding: 30px; border-radius: 15px; box-shadow: 0 4px 15px rgba(0,0,0,0.1); width: 100%; max-width: 400px; text-align: center; }
+        .upload-zone { border: 2px dashed #3498db; border-radius: 10px; padding: 20px; margin: 20px 0; cursor: pointer; position: relative; }
+        #preview { width: 100%; border-radius: 8px; display: none; margin-top: 10px; }
+        button { background: #3498db; color: white; border: none; width: 100%; padding: 12px; border-radius: 8px; font-weight: bold; cursor: pointer; }
+        #result { margin-top: 20px; padding: 15px; border-radius: 8px; display: none; background: #e8f4fd; color: #2c3e50; }
+        .breed { font-size: 24px; font-weight: bold; color: #2980b9; display: block; }
     </style>
 </head>
 <body>
 
-<div class="container">
-    <h1>🐕 Dog Breed AI</h1>
-    <p>Upload a photo to see the AI's best guess!</p>
-
-    <div class="upload-area" onclick="document.getElementById('dogFile').click()">
-        <span id="upload-text">Click to Upload Dog Photo</span>
-        <input type="file" id="dogFile" accept="image/*" style="display: none;">
-        <img id="preview" src="#" alt="Preview">
+<div class="card">
+    <h1>🐕 Dog Scanner</h1>
+    <div class="upload-zone" onclick="document.getElementById('inp').click()">
+        <p id="msg">Click to select photo</p>
+        <input type="file" id="inp" accept="image/*" style="display:none">
+        <img id="preview">
     </div>
-
-    <button id="analyzeBtn">Analyze Breed</button>
-    <div id="result-box"></div>
+    <button id="btn">Identify Breed</button>
+    <div id="result"></div>
 </div>
 
 <script>
-    // MAKE SURE THIS IS YOUR CORRECT PUBLIC DOMAIN FROM RAILWAY
-    const API_URL = "https://dog-ai-bread-finder-production.up.railway.app"; 
+    const API = "https://dog-ai-bread-finder-production.up.railway.app";
+    const inp = document.getElementById('inp');
+    const pre = document.getElementById('preview');
+    const btn = document.getElementById('btn');
+    const res = document.getElementById('result');
 
-    // The Oxford-IIIT Pet Dataset labels (37 classes) used by ScottMueller
-    const BREED_MAP = [
-        "Abyssinian (Cat)", "Bengal (Cat)", "Birman (Cat)", "Bombay (Cat)", "British Shorthair (Cat)",
-        "Egyptian Mau (Cat)", "Maine Coon (Cat)", "Persian (Cat)", "Ragdoll (Cat)", "Russian Blue (Cat)",
-        "Siamese (Cat)", "Sphynx (Cat)", "American Bulldog", "American Pit Bull Terrier", "Basset Hound",
-        "Beagle", "Boxer", "Chihuahua", "English Cocker Spaniel", "English Setter", "German Shorthaired Pointer",
-        "Great Pyrenees", "Havanese", "Japanese Chin", "Keeshond", "Leonberger", "Miniature Pinscher",
-        "Newfoundland", "Pomeranian", "Pug", "Saint Bernard", "Samoyed", "Scottish Terrier", "Shiba Inu",
-        "Staffordshire Bull Terrier", "Wheaten Terrier", "Yorkshire Terrier"
-    ];
-
-    const fileInput = document.getElementById('dogFile');
-    const preview = document.getElementById('preview');
-    const analyzeBtn = document.getElementById('analyzeBtn');
-    const resultBox = document.getElementById('result-box');
-    const uploadText = document.getElementById('upload-text');
-
-    fileInput.onchange = evt => {
-        const [file] = fileInput.files;
+    inp.onchange = () => {
+        const file = inp.files[0];
         if (file) {
-            preview.src = URL.createObjectURL(file);
-            preview.style.display = 'block';
-            uploadText.style.display = 'none';
-            resultBox.style.display = 'none';
+            pre.src = URL.createObjectURL(file);
+            pre.style.display = 'block';
+            document.getElementById('msg').style.display = 'none';
         }
-    }
+    };
 
-    analyzeBtn.onclick = async () => {
-        if (!fileInput.files[0]) {
-            alert("Please upload a photo first!");
-            return;
-        }
+    btn.onclick = async () => {
+        if(!inp.files[0]) return alert("Select a photo!");
+        
+        btn.disabled = true;
+        btn.innerText = "Scanning... 🔎";
+        res.style.display = 'none';
 
-        analyzeBtn.disabled = true;
-        analyzeBtn.innerText = "Processing AI... 🦴";
-        resultBox.style.display = 'none';
-
-        const formData = new FormData();
-        formData.append("file", fileInput.files[0]);
+        const fd = new FormData();
+        fd.append("file", inp.files[0]);
 
         try {
-            // Talking to your Railway Backend
-            const response = await fetch(`${API_URL}/analyze`, {
-                method: "POST",
-                body: formData
-            });
-
-            if (!response.ok) {
-                throw new Error("Server is waking up. Please try again in 10 seconds.");
-            }
-
-            const data = await response.json();
+            const r = await fetch(`${API}/analyze`, { method: "POST", body: fd });
+            const data = await r.json();
             
-            if (data.error) {
-                throw new Error(data.error);
-            }
+            if(data.error) throw new Error(data.error);
 
-            // Logic to handle both 0.95 and 95.0 formats for confidence
-            let displayConfidence = data.confidence;
-            if (displayConfidence <= 1.0) {
-                displayConfidence = displayConfidence * 100;
-            }
-
-            const breedName = BREED_MAP[data.class_index] || "Unknown Breed";
-            
-            resultBox.className = "success";
-            resultBox.style.display = "block";
-            resultBox.innerHTML = `
-                <span class="breed-name">✨ ${breedName}</span>
-                <div class="stat-line"><strong>Confidence:</strong> ${displayConfidence.toFixed(2)}%</div>
-                <div class="stat-line"><strong>Internal ID:</strong> ${data.class_index}</div>
+            res.style.display = 'block';
+            res.innerHTML = `
+                <span class="breed">${data.breed}</span>
+                <p>Confidence: <strong>${data.confidence.toFixed(1)}%</strong></p>
             `;
-
-        } catch (err) {
-            resultBox.className = "error";
-            resultBox.style.display = "block";
-            resultBox.innerText = "Error: " + err.message;
-            console.error(err);
+        } catch (e) {
+            alert("Error: " + e.message);
         } finally {
-            analyzeBtn.disabled = false;
-            analyzeBtn.innerText = "Analyze Breed";
+            btn.disabled = false;
+            btn.innerText = "Identify Breed";
         }
     };
 </script>
-
 </body>
 </html>
