@@ -4,6 +4,7 @@ import logging
 import asyncio
 from fastapi import FastAPI, UploadFile, File, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import JSONResponse
 from PIL import Image
 from transformers import AutoImageProcessor, AutoModelForImageClassification, pipeline
 import torch
@@ -62,6 +63,19 @@ def load_llm():
     finally:
         llm_is_loading = False
 
+def generate_breed_info(breed: str) -> str:
+    if KNOWLEDGE_TASK == "text2text-generation":
+        prompt = f"Tell me 3 quick facts about the {breed} dog breed."
+        response = text_pipeline(prompt, max_new_tokens=120)
+        return response[0]["generated_text"].strip()
+
+    prompt = f"""
+You are an assistant that provides information on dog breeds.
+User: Tell me 3 quick facts about the {breed} dog breed.
+Assistant: """
+    response = text_pipeline(prompt, max_new_tokens=120, do_sample=True, temperature=0.7)
+    return response[0]["generated_text"].split("Assistant: ")[-1].strip()
+
 @app.on_event("startup")
 async def startup_event():
     # Load the eyes first so the server is 'Healthy' for Railway
@@ -106,33 +120,43 @@ async def analyze(file: UploadFile = File(...)):
         if not text_pipeline:
             if not llm_is_loading:
                 asyncio.create_task(asyncio.to_thread(load_llm))
-            raise HTTPException(
-                status_code=503,
-                detail={
-                    "code": "LLM_LOADING",
-                    "breed": breed,
-                    "confidence": round(confidence, 1),
-                },
-            )
+            return {
+                "breed": breed,
+                "confidence": round(confidence, 1),
+                "llm_ready": False,
+                "llm_loading": llm_is_loading,
+                "info": None,
+            }
 
-        # Step 2: Brief Facts
-        if KNOWLEDGE_TASK == "text2text-generation":
-            prompt = f"Tell me 3 quick facts about the {breed} dog breed."
-            response = text_pipeline(prompt, max_new_tokens=120)
-            info_text = response[0]["generated_text"].strip()
-        else:
-            prompt = f"""
-You are an assistant that provides information on dog breeds.
-User: Tell me 3 quick facts about the {breed} dog breed.
-Assistant: """
-            response = text_pipeline(prompt, max_new_tokens=120, do_sample=True, temperature=0.7)
-            info_text = response[0]["generated_text"].split("Assistant: ")[-1].strip()
-
-        return {"breed": breed, "confidence": round(confidence, 1), "info": info_text}
+        info_text = generate_breed_info(breed)
+        return {
+            "breed": breed,
+            "confidence": round(confidence, 1),
+            "llm_ready": True,
+            "llm_loading": False,
+            "info": info_text,
+        }
     except HTTPException:
         raise
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
+
+@app.get("/facts")
+async def facts(breed: str):
+    global text_pipeline
+    if not breed:
+        raise HTTPException(status_code=400, detail="MISSING_BREED")
+
+    if not text_pipeline:
+        if not llm_is_loading:
+            asyncio.create_task(asyncio.to_thread(load_llm))
+        return JSONResponse(
+            status_code=202,
+            content={"status": "loading", "llm_ready": False},
+        )
+
+    info_text = generate_breed_info(breed)
+    return {"status": "ready", "llm_ready": True, "breed": breed, "info": info_text}
 
 @app.get("/")
 async def root():

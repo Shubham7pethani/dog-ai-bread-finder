@@ -192,36 +192,7 @@
             return { res, data };
           };
 
-          let { res, data } = await attemptAnalyze();
-          const llmLoadingDetail = data && data.detail;
-          const isLlmLoading =
-            res.status === 503 &&
-            (llmLoadingDetail === "LLM_LOADING" ||
-              (llmLoadingDetail && llmLoadingDetail.code === "LLM_LOADING"));
-
-          if (isLlmLoading) {
-            const partialBreed =
-              (llmLoadingDetail && llmLoadingDetail.breed) || "---";
-            const partialConf =
-              (llmLoadingDetail && llmLoadingDetail.confidence) || 0;
-
-            document.getElementById("result").style.display = "block";
-            document.getElementById("res-breed").innerText = partialBreed;
-            document.getElementById(
-              "res-conf"
-            ).innerText = `Confidence: ${partialConf}%`;
-            document.getElementById("res-info").innerText =
-              "⏳ Downloading brain (first time only)...";
-
-            document.getElementById("scanner").style.display = "none";
-
-            statusHint.innerText =
-              "⏳ Downloading brain (first time only)... Stay here.";
-            await waitForLlmReady();
-            statusHint.innerText = "🧠 Finishing analysis...";
-            document.getElementById("scanner").style.display = "block";
-            ({ res, data } = await attemptAnalyze());
-          }
+          const { res, data } = await attemptAnalyze();
 
           if (!res.ok) {
             throw new Error(
@@ -234,8 +205,40 @@
           document.getElementById(
             "res-conf"
           ).innerText = `Confidence: ${data.confidence}%`;
-          document.getElementById("res-info").innerText = data.info;
-          statusHint.innerText = "Done!";
+
+          if (data.info) {
+            document.getElementById("res-info").innerText = data.info;
+            statusHint.innerText = "Done!";
+            return;
+          }
+
+          document.getElementById("scanner").style.display = "none";
+          document.getElementById("res-info").innerText =
+            "⏳ Downloading brain (first time only)...";
+          statusHint.innerText =
+            "⏳ Downloading brain (first time only)... Stay here.";
+
+          // Wait until LLM is ready, then fetch facts
+          await waitForLlmReady();
+          statusHint.innerText = "🧠 Getting breed facts...";
+
+          const fetchFacts = async () => {
+            const factsRes = await fetch(
+              `${API}/facts?breed=${encodeURIComponent(data.breed)}`
+            );
+            const factsData = await factsRes.json();
+            return { factsRes, factsData };
+          };
+
+          while (true) {
+            const { factsRes, factsData } = await fetchFacts();
+            if (factsRes.ok && factsData && factsData.info) {
+              document.getElementById("res-info").innerText = factsData.info;
+              statusHint.innerText = "Done!";
+              break;
+            }
+            await sleep(2000);
+          }
         } catch (e) {
           alert(
             "Analysis failed. The model might still be loading. Try again in 10 seconds!"
