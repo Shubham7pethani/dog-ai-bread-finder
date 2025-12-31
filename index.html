@@ -1,110 +1,247 @@
 <!DOCTYPE html>
 <html lang="en">
-<head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>Dog Breed AI Expert</title>
     <style>
-        body { font-family: 'Segoe UI', sans-serif; display: flex; justify-content: center; background-color: #f0f2f5; padding: 20px; }
-        .card { background: white; padding: 30px; border-radius: 20px; box-shadow: 0 10px 25px rgba(0,0,0,0.1); width: 100%; max-width: 450px; text-align: center; }
-        .img-container { position: relative; width: 100%; border-radius: 12px; margin-top: 10px; display: none; overflow: hidden; }
-        #preview { width: 100%; display: block; }
-        .scan-bar { position: absolute; top: 0; left: 0; width: 100%; height: 4px; background: #00ffcc; display: none; animation: scan 2s infinite ease-in-out; }
-        @keyframes scan { 0%, 100% { top: 0%; } 50% { top: 100%; } }
-        .upload-zone { border: 2px dashed #3498db; border-radius: 12px; padding: 25px; margin: 20px 0; cursor: pointer; }
-        button { background: #3498db; color: white; border: none; width: 100%; padding: 18px; border-radius: 10px; font-weight: bold; cursor: pointer; }
-        button:disabled { background: #bdc3c7; }
-        #result { margin-top: 25px; text-align: left; display: none; }
-        .info-box { background: #f9f9f9; padding: 15px; border-radius: 10px; border: 1px solid #ddd; white-space: pre-line; }
-        .status-msg { font-size: 14px; color: #e67e22; margin-top: 10px; font-weight: bold; }
+      body {
+        font-family: "Segoe UI", sans-serif;
+        display: flex;
+        justify-content: center;
+        background-color: #f0f2f5;
+        padding: 20px;
+      }
+      .card {
+        background: white;
+        padding: 30px;
+        border-radius: 20px;
+        box-shadow: 0 10px 25px rgba(0, 0, 0, 0.1);
+        width: 100%;
+        max-width: 450px;
+        text-align: center;
+      }
+      .img-container {
+        position: relative;
+        width: 100%;
+        border-radius: 12px;
+        margin-top: 10px;
+        display: none;
+        overflow: hidden;
+      }
+      #preview {
+        width: 100%;
+        display: block;
+      }
+      .scan-bar {
+        position: absolute;
+        top: 0;
+        left: 0;
+        width: 100%;
+        height: 4px;
+        background: #00ffcc;
+        display: none;
+        animation: scan 2s infinite ease-in-out;
+      }
+      @keyframes scan {
+        0%,
+        100% {
+          top: 0%;
+        }
+        50% {
+          top: 100%;
+        }
+      }
+      .upload-zone {
+        border: 2px dashed #3498db;
+        border-radius: 12px;
+        padding: 25px;
+        margin: 20px 0;
+        cursor: pointer;
+      }
+      button {
+        background: #3498db;
+        color: white;
+        border: none;
+        width: 100%;
+        padding: 18px;
+        border-radius: 10px;
+        font-weight: bold;
+        cursor: pointer;
+      }
+      button:disabled {
+        background: #bdc3c7;
+      }
+      #result {
+        margin-top: 25px;
+        text-align: left;
+        display: none;
+      }
+      .info-box {
+        background: #f9f9f9;
+        padding: 15px;
+        border-radius: 10px;
+        border: 1px solid #ddd;
+        white-space: pre-line;
+      }
+      .status-msg {
+        font-size: 14px;
+        color: #e67e22;
+        margin-top: 10px;
+        font-weight: bold;
+      }
     </style>
-</head>
-<body>
-
-<div class="card">
-    <h1>🐕 Dog AI Expert</h1>
-    <div class="upload-zone" onclick="document.getElementById('inp').click()">
+  </head>
+  <body>
+    <div class="card">
+      <h1>🐕 Dog AI Expert</h1>
+      <div class="upload-zone" onclick="document.getElementById('inp').click()">
         <p id="msg">📸 Click to upload photo</p>
-        <input type="file" id="inp" accept="image/*" style="display:none">
+        <input type="file" id="inp" accept="image/*" style="display: none" />
         <div class="img-container" id="img-cont">
-            <div class="scan-bar" id="scanner"></div>
-            <img id="preview">
+          <div class="scan-bar" id="scanner"></div>
+          <img id="preview" />
         </div>
-    </div>
-    <button id="btn">Analyze Dog 🦴</button>
-    <p class="status-msg" id="status-hint">Ready to go!</p>
+      </div>
+      <button id="btn">Analyze Dog 🦴</button>
+      <p class="status-msg" id="status-hint">Ready to go!</p>
 
-    <div id="result">
+      <div id="result">
         <h2 id="res-breed">---</h2>
         <p id="res-conf">Confidence: 0%</p>
         <div class="info-box" id="res-info"></div>
+      </div>
     </div>
-</div>
 
-<script>
-    const API = "https://dog-ai-bread-finder-production.up.railway.app";
-    const statusHint = document.getElementById('status-hint');
-    const btn = document.getElementById('btn');
+    <script>
+      const API = "https://dog-ai-bread-finder-production.up.railway.app";
+      const statusHint = document.getElementById("status-hint");
+      const btn = document.getElementById("btn");
 
-    async function waitForModel() {
+      const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+
+      async function fetchStatus() {
+        const res = await fetch(`${API}/status`);
+        return await res.json();
+      }
+
+      async function waitForVisionOnline() {
         statusHint.innerText = "Connecting to AI... (Please wait)";
         while (true) {
-            try {
-                const res = await fetch(`${API}/status`);
-                const data = await res.json();
-                if (data.status === "ready") {
-                    statusHint.innerText = "✅ AI is Online!";
-                    return true;
-                } else {
-                    statusHint.innerText = "⏳ AI is downloading brain (950MB)... Stay here.";
-                }
-            } catch (e) {
-                statusHint.innerText = "📡 Waking up server... (Usually 30s)";
+          try {
+            const data = await fetchStatus();
+            if (data.vision_ready) {
+              statusHint.innerText = data.llm_ready
+                ? "✅ AI is Online!"
+                : "✅ Vision Ready. Click Analyze to download brain.";
+              return true;
             }
-            await new Promise(r => setTimeout(r, 4000)); // Check every 4 seconds
+            statusHint.innerText = "👀 Loading vision model... Stay here.";
+          } catch (e) {
+            statusHint.innerText = "📡 Waking up server... (Usually 30s)";
+          }
+          await sleep(3000);
         }
-    }
+      }
 
-    document.getElementById('inp').onchange = (e) => {
+      async function waitForLlmReady() {
+        while (true) {
+          try {
+            const data = await fetchStatus();
+            if (data.llm_ready) return true;
+            statusHint.innerText = data.llm_loading
+              ? "⏳ Downloading brain (first time only)... Stay here."
+              : "⏳ Preparing brain... Stay here.";
+          } catch (e) {
+            statusHint.innerText = "📡 Reconnecting...";
+          }
+          await sleep(3000);
+        }
+      }
+
+      document.getElementById("inp").onchange = (e) => {
         const file = e.target.files[0];
         if (file) {
-            document.getElementById('preview').src = URL.createObjectURL(file);
-            document.getElementById('img-cont').style.display = 'block';
-            document.getElementById('msg').style.display = 'none';
+          document.getElementById("preview").src = URL.createObjectURL(file);
+          document.getElementById("img-cont").style.display = "block";
+          document.getElementById("msg").style.display = "none";
         }
-    };
+      };
 
-    btn.onclick = async () => {
-        const file = document.getElementById('inp').files[0];
+      btn.onclick = async () => {
+        const file = document.getElementById("inp").files[0];
         if (!file) return alert("Select a photo!");
 
         btn.disabled = true;
-        document.getElementById('scanner').style.display = 'block';
-
-        // 1. Wait for model to be ready
-        const isReady = await waitForModel();
-        
-        // 2. Now send the image
-        statusHint.innerText = "🧠 Analyzing your dog...";
-        const fd = new FormData();
-        fd.append("file", file);
+        document.getElementById("scanner").style.display = "block";
 
         try {
-            const res = await fetch(`${API}/analyze`, { method: "POST", body: fd });
+          // 1) Ensure vision model is online
+          await waitForVisionOnline();
+
+          // 2) Attempt analysis (may trigger on-demand LLM load)
+          statusHint.innerText = "🧠 Analyzing your dog...";
+          const attemptAnalyze = async () => {
+            const fd = new FormData();
+            fd.append("file", file);
+            const res = await fetch(`${API}/analyze`, {
+              method: "POST",
+              body: fd,
+            });
             const data = await res.json();
-            
-            document.getElementById('result').style.display = 'block';
-            document.getElementById('res-breed').innerText = data.breed;
-            document.getElementById('res-conf').innerText = `Confidence: ${data.confidence}%`;
-            document.getElementById('res-info').innerText = data.info;
-            statusHint.innerText = "Done!";
+            return { res, data };
+          };
+
+          let { res, data } = await attemptAnalyze();
+          const llmLoadingDetail = data && data.detail;
+          const isLlmLoading =
+            res.status === 503 &&
+            (llmLoadingDetail === "LLM_LOADING" ||
+              (llmLoadingDetail && llmLoadingDetail.code === "LLM_LOADING"));
+
+          if (isLlmLoading) {
+            const partialBreed =
+              (llmLoadingDetail && llmLoadingDetail.breed) || "---";
+            const partialConf =
+              (llmLoadingDetail && llmLoadingDetail.confidence) || 0;
+
+            document.getElementById("result").style.display = "block";
+            document.getElementById("res-breed").innerText = partialBreed;
+            document.getElementById(
+              "res-conf"
+            ).innerText = `Confidence: ${partialConf}%`;
+            document.getElementById("res-info").innerText =
+              "⏳ Downloading brain (first time only)...";
+
+            statusHint.innerText =
+              "⏳ Downloading brain (first time only)... Stay here.";
+            await waitForLlmReady();
+            statusHint.innerText = "🧠 Finishing analysis...";
+            ({ res, data } = await attemptAnalyze());
+          }
+
+          if (!res.ok) {
+            throw new Error(
+              (data && (data.detail || data.error)) || "ANALYZE_FAILED"
+            );
+          }
+
+          document.getElementById("result").style.display = "block";
+          document.getElementById("res-breed").innerText = data.breed;
+          document.getElementById(
+            "res-conf"
+          ).innerText = `Confidence: ${data.confidence}%`;
+          document.getElementById("res-info").innerText = data.info;
+          statusHint.innerText = "Done!";
         } catch (e) {
-            alert("Analysis failed. The model might still be loading. Try again in 10 seconds!");
+          alert(
+            "Analysis failed. The model might still be loading. Try again in 10 seconds!"
+          );
         } finally {
-            btn.disabled = false;
-            document.getElementById('scanner').style.display = 'none';
+          btn.disabled = false;
+          document.getElementById("scanner").style.display = "none";
         }
-    };
-</script>
-</body>
+      };
+    </script>
+  </body>
 </html>

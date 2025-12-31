@@ -2,7 +2,7 @@ import os
 import io
 import logging
 import asyncio
-from fastapi import FastAPI, UploadFile, File
+from fastapi import FastAPI, UploadFile, File, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from PIL import Image
 from transformers import AutoImageProcessor, AutoModelForImageClassification, pipeline
@@ -73,9 +73,14 @@ async def startup_event():
 
 @app.get("/status")
 async def get_status():
-    if text_pipeline and vision_model:
-        return {"status": "ready"}
-    return {"status": "loading"}
+    vision_ready = vision_model is not None and vision_processor is not None
+    llm_ready = text_pipeline is not None
+    return {
+        "status": "ready" if (vision_ready and llm_ready) else ("online" if vision_ready else "loading"),
+        "vision_ready": vision_ready,
+        "llm_ready": llm_ready,
+        "llm_loading": llm_is_loading,
+    }
 
 @app.post("/analyze")
 async def analyze(file: UploadFile = File(...)):
@@ -83,8 +88,6 @@ async def analyze(file: UploadFile = File(...)):
     
     # Final check to ensure models are there
     if not vision_model: load_essentials()
-    if not text_pipeline: load_llm()
-        
     try:
         img_bytes = await file.read()
         img = Image.open(io.BytesIO(img_bytes)).convert("RGB")
@@ -94,17 +97,36 @@ async def analyze(file: UploadFile = File(...)):
         with torch.no_grad():
             outputs = vision_model(**inputs)
         
-        index = torch.argmax(outputs.logits, dim=-1)
+        probs = torch.softmax(outputs.logits, dim=-1)
+        index = torch.argmax(probs, dim=-1)
+        confidence = float(probs[0, int(index)].item() * 100.0)
         breed = vision_model.config.id2label[int(index)].replace("_", " ").title()
 
-        # Step 2: Brief Facts
-        prompt = f"<|im_start|>user\nTell me 3 quick facts about the {breed} dog breed.<|im_end|>\n<|im_start|>assistant\n"
-        response = text_pipeline(prompt, max_new_tokens=100, do_sample=True, temperature=0.7)
-        info_text = response[0]['generated_text'].split("assistant\n")[-1].strip()
+        if not text_pipeline:
+            if not llm_is_loading:
+                asyncio.create_task(asyncio.to_thread(load_llm))
+            raise HTTPException(
+                status_code=503,
+                detail={
+                    "code": "LLM_LOADING",
+                    "breed": breed,
+                    "confidence": round(confidence, 1),
+                },
+            )
 
-        return {"breed": breed, "info": info_text}
+        # Step 2: Brief Facts
+        prompt = f"""
+You are an assistant that provides information on dog breeds.
+User: Tell me 3 quick facts about the {breed} dog breed.
+Assistant: """
+        response = text_pipeline(prompt, max_new_tokens=120, do_sample=True, temperature=0.7)
+        info_text = response[0]["generated_text"].split("Assistant: ")[-1].strip()
+
+        return {"breed": breed, "confidence": round(confidence, 1), "info": info_text}
+    except HTTPException:
+        raise
     except Exception as e:
-        return {"error": str(e)}
+        raise HTTPException(status_code=500, detail=str(e))
 
 @app.get("/")
 async def root():
