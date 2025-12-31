@@ -23,6 +23,7 @@ vision_model = None
 vision_processor = None
 text_pipeline = None
 is_loading = False
+llm_is_loading = False
 
 # ---------------- LIGHTWEIGHT LOADING ----------------
 
@@ -43,26 +44,30 @@ def load_essentials():
 
 def load_llm():
     """Loads the Brain ONLY when needed or in the background."""
-    global text_pipeline
-    if text_pipeline: return
+    global text_pipeline, llm_is_loading
+    if llm_is_loading or text_pipeline: return
+    llm_is_loading = True
     try:
         logger.info("🧠 Loading Tiny LLM Brain (Qwen 0.5B)...")
         text_pipeline = pipeline(
             "text-generation", 
             model=KNOWLEDGE_MODEL, 
             device="cpu", 
-            model_kwargs={"torch_dtype": torch.float32, "low_cpu_mem_usage": True}
+            model_kwargs={"dtype": torch.float32, "low_cpu_mem_usage": True}
         )
         logger.info("✅ LLM Brain Ready!")
     except Exception as e:
         logger.error(f"❌ LLM Load Failed: {e}")
+    finally:
+        llm_is_loading = False
 
 @app.on_event("startup")
 async def startup_event():
     # Load the eyes first so the server is 'Healthy' for Railway
     load_essentials()
     # Then start loading the brain in the background
-    asyncio.create_task(asyncio.to_thread(load_llm))
+    if os.getenv("PRELOAD_LLM", "false").lower() in {"1", "true", "yes"}:
+        asyncio.create_task(asyncio.to_thread(load_llm))
 
 # ---------------- API ENDPOINTS ----------------
 
