@@ -1,7 +1,9 @@
 fastapi
 uvicorn
-onnxruntime
+python-multipart
 pillow
 numpy
-huggingface_hub
-python-multipart
+transformers
+--index-url https://download.pytorch.org/whl/cpu
+torch
+torchvision
