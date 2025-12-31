@@ -213,10 +213,13 @@
             document.getElementById("res-info").innerText =
               "⏳ Downloading brain (first time only)...";
 
+            document.getElementById("scanner").style.display = "none";
+
             statusHint.innerText =
               "⏳ Downloading brain (first time only)... Stay here.";
             await waitForLlmReady();
             statusHint.innerText = "🧠 Finishing analysis...";
+            document.getElementById("scanner").style.display = "block";
             ({ res, data } = await attemptAnalyze());
           }
 

@@ -16,7 +16,8 @@ app = FastAPI()
 app.add_middleware(CORSMiddleware, allow_origins=["*"], allow_methods=["*"], allow_headers=["*"])
 
 VISION_MODEL = "amaye15/google-vit-base-patch16-224-batch64-lr0.005-standford-dogs"
-KNOWLEDGE_MODEL = "Qwen/Qwen2-0.5B-Instruct"
+KNOWLEDGE_MODEL = os.getenv("KNOWLEDGE_MODEL", "google/flan-t5-small")
+KNOWLEDGE_TASK = os.getenv("KNOWLEDGE_TASK", "text2text-generation")
 
 # Global Variables
 vision_model = None
@@ -48,9 +49,9 @@ def load_llm():
     if llm_is_loading or text_pipeline: return
     llm_is_loading = True
     try:
-        logger.info("🧠 Loading Tiny LLM Brain (Qwen 0.5B)...")
+        logger.info(f"🧠 Loading Tiny LLM Brain ({KNOWLEDGE_MODEL})...")
         text_pipeline = pipeline(
-            "text-generation", 
+            KNOWLEDGE_TASK,
             model=KNOWLEDGE_MODEL, 
             device="cpu", 
             model_kwargs={"dtype": torch.float32, "low_cpu_mem_usage": True}
@@ -115,12 +116,17 @@ async def analyze(file: UploadFile = File(...)):
             )
 
         # Step 2: Brief Facts
-        prompt = f"""
+        if KNOWLEDGE_TASK == "text2text-generation":
+            prompt = f"Tell me 3 quick facts about the {breed} dog breed."
+            response = text_pipeline(prompt, max_new_tokens=120)
+            info_text = response[0]["generated_text"].strip()
+        else:
+            prompt = f"""
 You are an assistant that provides information on dog breeds.
 User: Tell me 3 quick facts about the {breed} dog breed.
 Assistant: """
-        response = text_pipeline(prompt, max_new_tokens=120, do_sample=True, temperature=0.7)
-        info_text = response[0]["generated_text"].split("Assistant: ")[-1].strip()
+            response = text_pipeline(prompt, max_new_tokens=120, do_sample=True, temperature=0.7)
+            info_text = response[0]["generated_text"].split("Assistant: ")[-1].strip()
 
         return {"breed": breed, "confidence": round(confidence, 1), "info": info_text}
     except HTTPException:
