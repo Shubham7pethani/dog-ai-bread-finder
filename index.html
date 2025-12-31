@@ -7,21 +7,36 @@
     <style>
         body { font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; display: flex; justify-content: center; background-color: #f0f2f5; padding: 20px; color: #1c1e21; }
         .card { background: white; padding: 30px; border-radius: 20px; box-shadow: 0 10px 25px rgba(0,0,0,0.1); width: 100%; max-width: 450px; text-align: center; }
+        
+        /* Container for image + scanning bar */
+        .img-container { position: relative; width: 100%; overflow: hidden; border-radius: 12px; margin-top: 10px; display: none; }
+        #preview { width: 100%; display: block; box-shadow: 0 4px 10px rgba(0,0,0,0.05); }
+
+        /* AI Scanning Animation */
+        .scan-bar { 
+            position: absolute; top: 0; left: 0; width: 100%; height: 4px; 
+            background: #3498db; box-shadow: 0 0 15px #3498db; 
+            display: none; z-index: 10;
+            animation: scan 2s infinite ease-in-out;
+        }
+        @keyframes scan { 0% { top: 0%; } 50% { top: 100%; } 100% { top: 0%; } }
+
         .upload-zone { border: 2px dashed #3498db; border-radius: 12px; padding: 25px; margin: 20px 0; cursor: pointer; background: #f8fbff; transition: 0.3s; }
         .upload-zone:hover { border-color: #2980b9; background: #eef7ff; }
-        #preview { width: 100%; border-radius: 12px; display: none; margin-top: 10px; box-shadow: 0 4px 10px rgba(0,0,0,0.05); }
         
-        button { background: #3498db; color: white; border: none; width: 100%; padding: 15px; border-radius: 10px; font-weight: bold; cursor: pointer; font-size: 18px; transition: 0.3s; box-shadow: 0 4px 6px rgba(52, 152, 219, 0.2); }
+        button { background: #3498db; color: white; border: none; width: 100%; padding: 15px; border-radius: 10px; font-weight: bold; cursor: pointer; font-size: 18px; transition: 0.3s; display: flex; align-items: center; justify-content: center; gap: 10px; }
         button:hover { background: #2980b9; transform: translateY(-1px); }
-        button:disabled { background: #bdc3c7; cursor: not-allowed; transform: none; }
+        button:disabled { background: #bdc3c7; cursor: not-allowed; }
+
+        /* CSS Spinner */
+        .spinner { width: 20px; height: 20px; border: 3px solid rgba(255,255,255,0.3); border-top: 3px solid white; border-radius: 50%; animation: spin 0.8s linear infinite; display: none; }
+        @keyframes spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }
 
         #result { margin-top: 20px; text-align: left; display: none; }
         .breed-header { background: #3498db; color: white; padding: 15px; border-radius: 10px 10px 0 0; text-align: center; }
         .breed-name { font-size: 24px; font-weight: 800; display: block; }
         .confidence { font-size: 14px; opacity: 0.9; }
-        
-        .info-box { background: #fff; border: 1px solid #dcdfe3; border-top: none; padding: 20px; border-radius: 0 0 10px 10px; font-size: 15px; line-height: 1.6; color: #4b4f56; white-space: pre-line; /* Keeps line breaks from AI */ }
-        .loader-text { font-size: 12px; display: block; margin-top: 5px; color: #f39c12; }
+        .info-box { background: #fff; border: 1px solid #dcdfe3; border-top: none; padding: 20px; border-radius: 0 0 10px 10px; font-size: 15px; line-height: 1.6; color: #4b4f56; white-space: pre-line; }
     </style>
 </head>
 <body>
@@ -33,32 +48,37 @@
     <div class="upload-zone" onclick="document.getElementById('inp').click()">
         <p id="msg">📸 Click to upload dog photo</p>
         <input type="file" id="inp" accept="image/*" style="display:none">
-        <img id="preview">
+        <div class="img-container" id="img-cont">
+            <div class="scan-bar" id="scanner"></div>
+            <img id="preview">
+        </div>
     </div>
 
-    <button id="btn">Analyze Dog 🦴</button>
+    <button id="btn">
+        <span class="spinner" id="loader"></span>
+        <span id="btn-text">Analyze Dog 🦴</span>
+    </button>
 
     <div id="result">
         <div class="breed-header">
             <span class="breed-name" id="res-breed">---</span>
             <span class="confidence" id="res-conf">Confidence: 0%</span>
         </div>
-        <div class="info-box" id="res-info">
-            The AI is gathering facts about this breed...
-        </div>
+        <div class="info-box" id="res-info">AI is gathering facts...</div>
     </div>
 </div>
 
 <script>
-    // YOUR RAILWAY URL
     const API = "https://dog-ai-bread-finder-production.up.railway.app";
-
     const inp = document.getElementById('inp');
+    const imgCont = document.getElementById('img-cont');
     const pre = document.getElementById('preview');
+    const scanner = document.getElementById('scanner');
     const btn = document.getElementById('btn');
+    const loader = document.getElementById('loader');
+    const btnText = document.getElementById('btn-text');
     const res = document.getElementById('result');
     const msg = document.getElementById('msg');
-    
     const resBreed = document.getElementById('res-breed');
     const resConf = document.getElementById('res-conf');
     const resInfo = document.getElementById('res-info');
@@ -67,50 +87,48 @@
         const file = inp.files[0];
         if (file) {
             pre.src = URL.createObjectURL(file);
-            pre.style.display = 'block';
+            imgCont.style.display = 'block';
             msg.style.display = 'none';
             res.style.display = 'none';
         }
     };
 
     btn.onclick = async () => {
-        if (!inp.files[0]) {
-            alert("Bro, select a dog photo first!");
-            return;
-        }
+        if (!inp.files[0]) return alert("Bro, select a dog photo first!");
 
+        // 1. Loading UI Start
         btn.disabled = true;
-        btn.innerHTML = `Thinking... 🧠 <span class="loader-text">Loading Brain (takes 10-20s)</span>`;
+        loader.style.display = 'inline-block';
+        btnText.innerText = "AI is Thinking...";
+        scanner.style.display = 'block';
         res.style.display = 'none';
 
         const fd = new FormData();
         fd.append("file", inp.files[0]);
 
         try {
-            const r = await fetch(`${API}/analyze`, {
-                method: "POST",
-                body: fd
-            });
-
+            const r = await fetch(`${API}/analyze`, { method: "POST", body: fd });
             const data = await r.json();
             
             if (data.error) {
-                alert("AI Error: " + data.error);
+                alert("AI Note: " + data.error);
                 return;
             }
 
-            // Display Results
+            // 2. Display Results
             res.style.display = 'block';
             resBreed.innerText = data.breed;
             resConf.innerText = `Confidence: ${data.confidence}%`;
-            resInfo.innerText = data.info; // This is the text from Phi-3
+            resInfo.innerText = data.info;
 
         } catch (e) {
-            alert("Connection Error: Check if Railway is awake!");
-            console.error(e);
+            alert("Connection Error: If this is the first time, wait 2 mins for the brain to download!");
         } finally {
+            // 3. Reset UI
             btn.disabled = false;
-            btn.innerText = "Analyze Dog 🦴";
+            loader.style.display = 'none';
+            btnText.innerText = "Analyze Dog 🦴";
+            scanner.style.display = 'none';
         }
     };
 </script>

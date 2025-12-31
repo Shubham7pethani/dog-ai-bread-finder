@@ -1,5 +1,5 @@
 import os, io, logging
-from fastapi import FastAPI, UploadFile, File, BackgroundTasks
+from fastapi import FastAPI, UploadFile, File
 from fastapi.middleware.cors import CORSMiddleware
 from PIL import Image
 from transformers import AutoImageProcessor, AutoModelForImageClassification, pipeline
@@ -21,67 +21,51 @@ app.add_middleware(
 VISION_MODEL = "amaye15/google-vit-base-patch16-224-batch64-lr0.005-standford-dogs"
 KNOWLEDGE_MODEL = "microsoft/Phi-3-mini-4k-instruct"
 
-# Global State
+# Global State (Start as None)
 vision_model = None
 vision_processor = None
 text_pipeline = None
-is_loading = False
 
 # ---------------- STARTUP ----------------
 @app.get("/")
 async def root():
-    # This responds instantly so Railway knows the app is alive!
-    status = "Ready" if text_pipeline else ("Downloading Models..." if is_loading else "Waiting for first request")
-    return {
-        "status": status, 
-        "vision": VISION_MODEL, 
-        "knowledge": KNOWLEDGE_MODEL,
-        "note": "First analysis will take 3-5 mins to download the brain."
-    }
+    # This responds INSTANTLY so Railway knows the app is alive
+    status = "Ready" if text_pipeline else "AI is warming up (Downloading Brain...)"
+    return {"status": status, "note": "First analysis will trigger the 2GB download."}
 
 def load_all_ai():
-    global vision_model, vision_processor, text_pipeline, is_loading
-    if is_loading: return
+    global vision_model, vision_processor, text_pipeline
     
-    is_loading = True
-    try:
-        # 1. Load the "Eyes"
-        if vision_model is None:
-            logger.info("👀 Loading Vision Model...")
-            vision_model = AutoModelForImageClassification.from_pretrained(VISION_MODEL)
-            vision_processor = AutoImageProcessor.from_pretrained(VISION_MODEL, use_fast=True)
-        
-        # 2. Load the "Brain" (Knowledge Model)
-        if text_pipeline is None:
-            logger.info("🧠 Loading Knowledge Model (Phi-3)... This takes 3-5 mins.")
-            text_pipeline = pipeline(
-                "text-generation",
-                model=KNOWLEDGE_MODEL,
-                trust_remote_code=True,
-                device_map="auto",
-                model_kwargs={"dtype": torch.float32} # Fixed: dtype instead of torch_dtype
-            )
-        logger.info("✅ All AI Engines Online!")
-    except Exception as e:
-        logger.error(f"❌ Load Error: {e}")
-    finally:
-        is_loading = False
+    # Only load if they don't exist yet
+    if vision_model is None:
+        logger.info("👀 Loading Vision Model...")
+        vision_model = AutoModelForImageClassification.from_pretrained(VISION_MODEL)
+        vision_processor = AutoImageProcessor.from_pretrained(VISION_MODEL, use_fast=True)
+    
+    if text_pipeline is None:
+        logger.info("🧠 Loading Knowledge Model (Phi-3)...")
+        text_pipeline = pipeline(
+            "text-generation",
+            model=KNOWLEDGE_MODEL,
+            trust_remote_code=True,
+            device_map="auto",
+            model_kwargs={"dtype": torch.float32} # Fixed deprecation warning
+        )
+    logger.info("✅ All AI Engines Online!")
 
 # ---------------- API ----------------
 @app.post("/analyze")
 async def analyze(file: UploadFile = File(...)):
-    global vision_model, text_pipeline
-    
-    # If models aren't ready, start loading and tell user to wait
+    # Trigger load only when someone actually uses the app
     if vision_model is None or text_pipeline is None:
+        logger.info("🚀 First request detected! Starting heavy download...")
         load_all_ai()
-        return {"error": "AI is still warming up! Please try again in 2 minutes while we download the brain."}
         
     try:
         img_bytes = await file.read()
         img = Image.open(io.BytesIO(img_bytes)).convert("RGB")
         
-        # STEP 1: Identify the Breed
+        # Identify Breed
         inputs = vision_processor(images=img, return_tensors="pt")
         with torch.no_grad():
             vision_outputs = vision_model(**inputs)
@@ -90,7 +74,7 @@ async def analyze(file: UploadFile = File(...)):
         confidence, index = torch.max(probs, dim=-1)
         breed = vision_model.config.id2label[int(index)].replace("_", " ").title()
 
-        # STEP 2: Ask the "Brain" (Phi-3)
+        # Generate Facts
         prompt = f"<|user|>\nTell me 3 amazing facts about the {breed} dog breed. Keep it friendly and short.<|end|>\n<|assistant|>\n"
         
         with torch.no_grad():
@@ -110,6 +94,7 @@ async def analyze(file: UploadFile = File(...)):
             "confidence": round(float(confidence) * 100, 2),
             "info": info_text
         }
+        
     except Exception as e:
-        logger.error(f"❌ Error during analysis: {e}")
+        logger.error(f"❌ Error: {e}")
         return {"error": str(e)}
