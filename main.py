@@ -1,5 +1,5 @@
 import os, io, logging
-from fastapi import FastAPI, UploadFile, File
+from fastapi import FastAPI, UploadFile, File, BackgroundTasks
 from fastapi.middleware.cors import CORSMiddleware
 from PIL import Image
 from transformers import AutoImageProcessor, AutoModelForImageClassification, pipeline
@@ -25,49 +25,64 @@ KNOWLEDGE_MODEL = "microsoft/Phi-3-mini-4k-instruct"
 vision_model = None
 vision_processor = None
 text_pipeline = None
+is_loading = False
 
 # ---------------- STARTUP ----------------
 @app.get("/")
 async def root():
-    status = "Ready" if text_pipeline else "Loading AI..."
-    return {"status": status, "vision": VISION_MODEL, "knowledge": KNOWLEDGE_MODEL}
+    # This responds instantly so Railway knows the app is alive!
+    status = "Ready" if text_pipeline else ("Downloading Models..." if is_loading else "Waiting for first request")
+    return {
+        "status": status, 
+        "vision": VISION_MODEL, 
+        "knowledge": KNOWLEDGE_MODEL,
+        "note": "First analysis will take 3-5 mins to download the brain."
+    }
 
 def load_all_ai():
-    global vision_model, vision_processor, text_pipeline
+    global vision_model, vision_processor, text_pipeline, is_loading
+    if is_loading: return
     
-    # 1. Load the "Eyes" (Vision Model)
-    if vision_model is None:
-        logger.info("👀 Loading Vision Model...")
-        vision_model = AutoModelForImageClassification.from_pretrained(VISION_MODEL)
-        vision_processor = AutoImageProcessor.from_pretrained(VISION_MODEL, use_fast=True)
-    
-    # 2. Load the "Brain" (Knowledge Model)
-    if text_pipeline is None:
-        logger.info("🧠 Loading Knowledge Model (Phi-3)...")
-        # FIXED: trust_remote_code moved out of model_kwargs to prevent TypeError
-        text_pipeline = pipeline(
-            "text-generation",
-            model=KNOWLEDGE_MODEL,
-            trust_remote_code=True,
-            device_map="auto",
-            model_kwargs={"dtype": torch.float32}
-        )
-    logger.info("✅ All AI Engines Online!")
+    is_loading = True
+    try:
+        # 1. Load the "Eyes"
+        if vision_model is None:
+            logger.info("👀 Loading Vision Model...")
+            vision_model = AutoModelForImageClassification.from_pretrained(VISION_MODEL)
+            vision_processor = AutoImageProcessor.from_pretrained(VISION_MODEL, use_fast=True)
+        
+        # 2. Load the "Brain" (Knowledge Model)
+        if text_pipeline is None:
+            logger.info("🧠 Loading Knowledge Model (Phi-3)... This takes 3-5 mins.")
+            text_pipeline = pipeline(
+                "text-generation",
+                model=KNOWLEDGE_MODEL,
+                trust_remote_code=True,
+                device_map="auto",
+                model_kwargs={"dtype": torch.float32} # Fixed: dtype instead of torch_dtype
+            )
+        logger.info("✅ All AI Engines Online!")
+    except Exception as e:
+        logger.error(f"❌ Load Error: {e}")
+    finally:
+        is_loading = False
 
 # ---------------- API ----------------
 @app.post("/analyze")
 async def analyze(file: UploadFile = File(...)):
-    # Lazy load if models aren't in memory
+    global vision_model, text_pipeline
+    
+    # If models aren't ready, start loading and tell user to wait
     if vision_model is None or text_pipeline is None:
         load_all_ai()
+        return {"error": "AI is still warming up! Please try again in 2 minutes while we download the brain."}
         
     try:
-        # STEP 1: Identify the Breed
         img_bytes = await file.read()
         img = Image.open(io.BytesIO(img_bytes)).convert("RGB")
         
+        # STEP 1: Identify the Breed
         inputs = vision_processor(images=img, return_tensors="pt")
-        
         with torch.no_grad():
             vision_outputs = vision_model(**inputs)
         
@@ -75,10 +90,7 @@ async def analyze(file: UploadFile = File(...)):
         confidence, index = torch.max(probs, dim=-1)
         breed = vision_model.config.id2label[int(index)].replace("_", " ").title()
 
-        # STEP 2: Ask the "Brain" (Phi-3) about this breed
-        logger.info(f"🧠 Generating facts for: {breed}")
-        
-        # Phi-3 Prompt Format
+        # STEP 2: Ask the "Brain" (Phi-3)
         prompt = f"<|user|>\nTell me 3 amazing facts about the {breed} dog breed. Keep it friendly and short.<|end|>\n<|assistant|>\n"
         
         with torch.no_grad():
@@ -90,19 +102,14 @@ async def analyze(file: UploadFile = File(...)):
                 clean_up_tokenization_spaces=True
             )
         
-        # Clean up the AI response text
         raw_text = knowledge[0]['generated_text']
-        if "<|assistant|>\n" in raw_text:
-            info_text = raw_text.split("<|assistant|>\n")[-1].strip()
-        else:
-            info_text = raw_text.strip()
+        info_text = raw_text.split("<|assistant|>\n")[-1].strip() if "<|assistant|>\n" in raw_text else raw_text.strip()
 
         return {
             "breed": breed,
             "confidence": round(float(confidence) * 100, 2),
             "info": info_text
         }
-        
     except Exception as e:
         logger.error(f"❌ Error during analysis: {e}")
         return {"error": str(e)}
