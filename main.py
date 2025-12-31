@@ -9,7 +9,6 @@ import torch
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger("pet-ai")
 
-# ---------------- APP ----------------
 app = FastAPI()
 app.add_middleware(
     CORSMiddleware,
@@ -18,53 +17,50 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# ---------------- VERIFIED REPO ----------------
-# This repo is public and has the best 120-breed ViT model
 MODEL_ID = "amaye15/google-vit-base-patch16-224-batch64-lr0.005-standford-dogs"
 
+# Global variables to hold our AI "brain"
 model = None
 processor = None
 
-# ---------------- STARTUP ----------------
-@app.on_event("startup")
-async def startup():
+# Simple root path so Railway sees "Success" immediately
+@app.get("/")
+async def root():
+    status = "Ready" if model else "Loading AI..."
+    return {"status": status, "model": MODEL_ID}
+
+# ---------------- AI LOADER ----------------
+def load_ai():
     global model, processor
-    logger.info(f"🚀 Loading High-Accuracy Model: {MODEL_ID}")
-    try:
-        # This downloads the full high-accuracy model automatically
+    if model is None:
+        logger.info(f"🚀 Downloading Model... this takes ~60 seconds")
         model = AutoModelForImageClassification.from_pretrained(MODEL_ID)
         processor = AutoImageProcessor.from_pretrained(MODEL_ID)
-        logger.info("✅ Best Dog AI is ONLINE")
-    except Exception as e:
-        logger.error(f"❌ Startup failed: {e}")
+        logger.info("✅ Model Loaded and Ready!")
 
 # ---------------- API ----------------
 @app.post("/analyze")
 async def analyze(file: UploadFile = File(...)):
-    if model is None: return {"error": "AI not ready yet"}
+    # Load AI on the first request if it's not ready
+    if model is None:
+        load_ai()
+        
     try:
         img = Image.open(io.BytesIO(await file.read())).convert("RGB")
-        
-        # Preprocessing
         inputs = processor(images=img, return_tensors="pt")
         
-        # Run through the 120-breed AI
         with torch.no_grad():
             outputs = model(**inputs)
             logits = outputs.logits
         
-        # Calculate Percentage
         probs = torch.nn.functional.softmax(logits, dim=-1)
         confidence, index = torch.max(probs, dim=-1)
-        
-        # Get the actual breed name from the 120 labels
         breed_name = model.config.id2label[int(index)]
         
         return {
             "breed": breed_name.replace("_", " ").title(),
             "confidence": round(float(confidence) * 100, 2)
         }
-
     except Exception as e:
         logger.error(f"Error: {e}")
         return {"error": str(e)}
