@@ -4,7 +4,7 @@ uvicorn
 python-multipart
 pillow
 numpy
-transformers
+transformers>=4.43.0
 torch
 torchvision
 accelerate

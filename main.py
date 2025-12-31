@@ -2,7 +2,7 @@ import os, io, logging
 from fastapi import FastAPI, UploadFile, File
 from fastapi.middleware.cors import CORSMiddleware
 from PIL import Image
-from transformers import AutoImageProcessor, AutoModelForImageClassification, pipeline
+from transformers import AutoImageProcessor, AutoModelForImageClassification, pipeline, BitsAndBytesConfig
 import torch
 
 # ---------------- CONFIG ----------------
@@ -21,7 +21,7 @@ app.add_middleware(
 VISION_MODEL = "amaye15/google-vit-base-patch16-224-batch64-lr0.005-standford-dogs"
 KNOWLEDGE_MODEL = "microsoft/Phi-3-mini-4k-instruct"
 
-# Global State (Start as None)
+# Global State
 vision_model = None
 vision_processor = None
 text_pipeline = None
@@ -29,43 +29,54 @@ text_pipeline = None
 # ---------------- STARTUP ----------------
 @app.get("/")
 async def root():
-    # This responds INSTANTLY so Railway knows the app is alive
     status = "Ready" if text_pipeline else "AI is warming up (Downloading Brain...)"
-    return {"status": status, "note": "First analysis will trigger the 2GB download."}
+    return {"status": status, "note": "First analysis will trigger compressed 4-bit download."}
 
 def load_all_ai():
     global vision_model, vision_processor, text_pipeline
     
-    # Only load if they don't exist yet
+    # 1. Load the Vision Model (Eyes)
     if vision_model is None:
         logger.info("👀 Loading Vision Model...")
         vision_model = AutoModelForImageClassification.from_pretrained(VISION_MODEL)
         vision_processor = AutoImageProcessor.from_pretrained(VISION_MODEL, use_fast=True)
     
+    # 2. Load the LLM (Brain) with 4-Bit Compression
     if text_pipeline is None:
-        logger.info("🧠 Loading Knowledge Model (Phi-3)...")
+        logger.info("🧠 Loading LLM with 4-bit Quantization to save RAM...")
+        
+        # This config tells the AI to use 4x less memory
+        quant_config = BitsAndBytesConfig(
+            load_in_4bit=True,
+            bnb_4bit_compute_dtype=torch.float16,
+            bnb_4bit_quant_type="nf4",
+            bnb_4bit_use_double_quant=True
+        )
+
         text_pipeline = pipeline(
             "text-generation",
             model=KNOWLEDGE_MODEL,
             trust_remote_code=True,
             device_map="auto",
-            model_kwargs={"dtype": torch.float32} # Fixed deprecation warning
+            model_kwargs={
+                "quantization_config": quant_config,
+                "low_cpu_mem_usage": True
+            }
         )
-    logger.info("✅ All AI Engines Online!")
+    logger.info("✅ All AI Engines Online (Compressed Mode)!")
 
 # ---------------- API ----------------
 @app.post("/analyze")
 async def analyze(file: UploadFile = File(...)):
-    # Trigger load only when someone actually uses the app
     if vision_model is None or text_pipeline is None:
-        logger.info("🚀 First request detected! Starting heavy download...")
+        logger.info("🚀 First request! Starting compressed download...")
         load_all_ai()
         
     try:
         img_bytes = await file.read()
         img = Image.open(io.BytesIO(img_bytes)).convert("RGB")
         
-        # Identify Breed
+        # Step 1: Identify Breed
         inputs = vision_processor(images=img, return_tensors="pt")
         with torch.no_grad():
             vision_outputs = vision_model(**inputs)
@@ -74,13 +85,14 @@ async def analyze(file: UploadFile = File(...)):
         confidence, index = torch.max(probs, dim=-1)
         breed = vision_model.config.id2label[int(index)].replace("_", " ").title()
 
-        # Generate Facts
-        prompt = f"<|user|>\nTell me 3 amazing facts about the {breed} dog breed. Keep it friendly and short.<|end|>\n<|assistant|>\n"
+        # Step 2: Generate Smart Facts with the LLM
+        logger.info(f"🧠 LLM generating info for: {breed}")
+        prompt = f"<|user|>\nProvide a brief overview and 3 amazing facts about the {breed} dog breed. Keep it friendly.<|end|>\n<|assistant|>\n"
         
         with torch.no_grad():
             knowledge = text_pipeline(
                 prompt, 
-                max_new_tokens=150, 
+                max_new_tokens=200, 
                 temperature=0.7,
                 do_sample=True,
                 clean_up_tokenization_spaces=True
