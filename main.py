@@ -21,97 +21,63 @@ app.add_middleware(
 
 # ---------------- PATHS ----------------
 MODEL_DIR = "models"
-LABEL_DIR = "labels"
 os.makedirs(MODEL_DIR, exist_ok=True)
-os.makedirs(LABEL_DIR, exist_ok=True)
 
-# ---------------- MODEL CONFIG ----------------
-MODELS = {
-    "dogcat": {
-        "repo": "onnx/models",
-        "file": "mobilenetv3-small-100.onnx"
-    },
-    "dog": {
-        "repo": "keras-io/stanford-dogs-onnx",
-        "file": "efficientnet_b0_stanford_dogs.onnx",
-        "labels_repo": "keras-io/stanford-dogs-onnx",
-        "labels_file": "dog_labels.json"
-    },
-    "cat": {
-        "repo": "keras-io/oxford-pets-onnx",
-        "file": "efficientnet_b0_oxford_pets.onnx",
-        "labels_repo": "keras-io/oxford-pets-onnx",
-        "labels_file": "cat_labels.json"
-    }
-}
+# ---------------- MODEL CONFIG (VERIFIED) ----------------
+MODEL_REPO = "ScottMueller/Cat_Dog_Breeds.ONNX"
+MODEL_FILE = "model.onnx"
 
-sessions = {}
-labels = {}
+# 37 breed labels (Oxford-IIIT Pets)
+LABELS = [
+    "Abyssinian", "american_bulldog", "american_pit_bull_terrier",
+    "basset_hound", "beagle", "Bengal", "Birman", "Bombay",
+    "boxer", "British_Shorthair", "chihuahua", "Egyptian_Mau",
+    "english_cocker_spaniel", "english_setter", "german_shorthaired",
+    "great_pyrenees", "havanese", "japanese_chin", "keeshond",
+    "leonberger", "Maine_Coon", "miniature_pinscher",
+    "newfoundland", "Persian", "pomeranian", "pug",
+    "Ragdoll", "Russian_Blue", "saint_bernard", "samoyed",
+    "scottish_terrier", "shiba_inu", "Siamese", "Sphynx",
+    "staffordshire_bull_terrier", "wheaten_terrier",
+    "yorkshire_terrier"
+]
+
+session = None
 
 # ---------------- HELPERS ----------------
-def download_file(repo, filename, folder):
-    path = os.path.join(folder, filename)
-    if not os.path.exists(path):
-        logger.info(f"⬇ Downloading {filename}")
+def download_model():
+    model_path = os.path.join(MODEL_DIR, MODEL_FILE)
+    if not os.path.exists(model_path):
+        logger.info("⬇ Downloading Pet Breed ONNX model...")
         downloaded = hf_hub_download(
-            repo_id=repo,
-            filename=filename,
-            local_dir=folder,
+            repo_id=MODEL_REPO,
+            filename=MODEL_FILE,
+            local_dir=MODEL_DIR,
             local_dir_use_symlinks=False
         )
-        os.rename(downloaded, path)
-    return path
+        os.rename(downloaded, model_path)
+    return model_path
+
 
 def preprocess(img: Image.Image):
     img = img.resize((224, 224))
     img = np.array(img).astype(np.float32) / 255.0
-    img = img.transpose(2, 0, 1)
+    img = img.transpose(2, 0, 1)  # CHW
     return np.expand_dims(img, axis=0)
+
 
 # ---------------- STARTUP ----------------
 @app.on_event("startup")
 async def startup():
+    global session
     logger.info("🚀 Starting Pet AI Engine")
 
-    # Dog vs Cat
-    dogcat_path = download_file(
-        MODELS["dogcat"]["repo"],
-        MODELS["dogcat"]["file"],
-        MODEL_DIR
-    )
-    sessions["dogcat"] = ort.InferenceSession(dogcat_path, providers=["CPUExecutionProvider"])
+    model_path = download_model()
+    session = ort.InferenceSession(model_path, providers=["CPUExecutionProvider"])
 
-    # Dog Breeds
-    dog_model_path = download_file(
-        MODELS["dog"]["repo"],
-        MODELS["dog"]["file"],
-        MODEL_DIR
-    )
-    sessions["dog"] = ort.InferenceSession(dog_model_path, providers=["CPUExecutionProvider"])
-
-    dog_labels_path = download_file(
-        MODELS["dog"]["labels_repo"],
-        MODELS["dog"]["labels_file"],
-        LABEL_DIR
-    )
-    labels["dog"] = json.load(open(dog_labels_path))
-
-    # Cat Breeds
-    cat_model_path = download_file(
-        MODELS["cat"]["repo"],
-        MODELS["cat"]["file"],
-        MODEL_DIR
-    )
-    sessions["cat"] = ort.InferenceSession(cat_model_path, providers=["CPUExecutionProvider"])
-
-    cat_labels_path = download_file(
-        MODELS["cat"]["labels_repo"],
-        MODELS["cat"]["labels_file"],
-        LABEL_DIR
-    )
-    labels["cat"] = json.load(open(cat_labels_path))
-
+    logger.info("✅ Model loaded successfully")
     logger.info("🐶🐱 Pet Breed AI READY")
+
 
 # ---------------- API ----------------
 @app.post("/analyze")
@@ -120,28 +86,17 @@ async def analyze(file: UploadFile = File(...)):
         img = Image.open(io.BytesIO(await file.read())).convert("RGB")
         x = preprocess(img)
 
-        # Step 1: Dog or Cat
-        dc_input = sessions["dogcat"].get_inputs()[0].name
-        dc_out = sessions["dogcat"].run(None, {dc_input: x})[0]
-        is_dog = int(np.argmax(dc_out)) == 1
+        input_name = session.get_inputs()[0].name
+        outputs = session.run(None, {input_name: x})[0][0]
 
-        if is_dog:
-            dog_input = sessions["dog"].get_inputs()[0].name
-            out = sessions["dog"].run(None, {dog_input: x})[0][0]
-            idx = int(np.argmax(out))
-            return {
-                "type": "dog",
-                "breed": labels["dog"][idx]
-            }
-        else:
-            cat_input = sessions["cat"].get_inputs()[0].name
-            out = sessions["cat"].run(None, {cat_input: x})[0][0]
-            idx = int(np.argmax(out))
-            return {
-                "type": "cat",
-                "breed": labels["cat"][idx]
-            }
+        idx = int(np.argmax(outputs))
+        confidence = float(outputs[idx])
+
+        return {
+            "breed": LABELS[idx],
+            "confidence": round(confidence, 4)
+        }
 
     except Exception as e:
-        logger.error(e)
+        logger.error(str(e))
         return {"error": str(e)}

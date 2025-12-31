@@ -1,7 +1,7 @@
 fastapi
 uvicorn
 onnxruntime
-numpy
 pillow
+numpy
 huggingface_hub
 python-multipart
