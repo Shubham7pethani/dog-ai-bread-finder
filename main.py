@@ -50,7 +50,7 @@ def load_all_ai():
             model=KNOWLEDGE_MODEL,
             trust_remote_code=True,
             device_map="auto",
-            model_kwargs={"torch_dtype": torch.float32}
+            model_kwargs={"dtype": torch.float32}
         )
     logger.info("✅ All AI Engines Online!")
 

@@ -4,5 +4,6 @@ builder = "nixpacks"
 [deploy]
 startCommand = "uvicorn main:app --host 0.0.0.0 --port $PORT"
 healthcheckPath = "/"
-healthcheckTimeout = 300
-healthcheckInterval = 30
+# We increase this to 10 minutes (600 seconds) to give Phi-3 time to download
+healthcheckTimeout = 600
+restartPolicyType = "ON_FAILURE"
