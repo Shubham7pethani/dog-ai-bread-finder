@@ -23,12 +23,12 @@ app.add_middleware(
 )
 
 # ---------------- MODEL CONFIG ----------------
-MODEL_REPO = "onnx/models"
-MODEL_SUBDIR = "vision/classification/efficientnet-lite4"
-MODEL_FILE = "efficientnet-lite4-11.onnx"
+MODEL_REPO = "akahana/dog-cat-breeds-onnx"
+MODEL_FILE = "model.onnx"
+LABEL_FILE = "labels.json"
 
 MODEL_PATH = f"models/{MODEL_FILE}"
-LABELS_PATH = "models/imagenet_labels.json"
+LABELS_PATH = f"models/{LABEL_FILE}"
 
 session = None
 labels = []
@@ -38,10 +38,10 @@ def download_model():
     os.makedirs("models", exist_ok=True)
 
     if not os.path.exists(MODEL_PATH):
-        logger.info("🚀 Downloading EfficientNet-Lite4 ONNX model...")
+        logger.info("🚀 Downloading Dog + Cat Breed ONNX model...")
         model_path = hf_hub_download(
             repo_id=MODEL_REPO,
-            filename=f"{MODEL_SUBDIR}/{MODEL_FILE}",
+            filename=MODEL_FILE,
             local_dir="models",
             local_dir_use_symlinks=False
         )
@@ -49,10 +49,10 @@ def download_model():
         logger.info("✅ Model downloaded")
 
     if not os.path.exists(LABELS_PATH):
-        logger.info("📥 Downloading ImageNet labels...")
+        logger.info("📥 Downloading breed labels...")
         labels_path = hf_hub_download(
-            repo_id="huggingface/label-files",
-            filename="imagenet-1k.json",
+            repo_id=MODEL_REPO,
+            filename=LABEL_FILE,
             local_dir="models",
             local_dir_use_symlinks=False
         )
@@ -74,7 +74,7 @@ async def startup():
     with open(LABELS_PATH, "r") as f:
         labels = json.load(f)
 
-    logger.info("🐶🐱 Pet AI Engine is ONLINE")
+    logger.info("🐶🐱 Dog + Cat Breed AI is ONLINE")
 
 # ---------------- IMAGE UTILS ----------------
 def preprocess_image(image: Image.Image):
@@ -109,7 +109,7 @@ async def analyze(file: UploadFile = File(...)):
         probs /= probs.sum()
 
         idx = int(np.argmax(probs))
-        label = labels[str(idx)]
+        label = labels[idx]
 
         return {
             "prediction": label,

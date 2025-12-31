@@ -1,8 +1,6 @@
 fastapi
 uvicorn
-onnxruntime
-requests
-pillow
-python-multipart
-numpy
 huggingface_hub
+onnxruntime
+numpy
+pillow
