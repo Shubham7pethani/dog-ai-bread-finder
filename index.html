@@ -5,158 +5,104 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Dog Breed AI Expert</title>
     <style>
-        body { font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; display: flex; justify-content: center; background-color: #f0f2f5; padding: 20px; color: #1c1e21; }
+        body { font-family: 'Segoe UI', sans-serif; display: flex; justify-content: center; background-color: #f0f2f5; padding: 20px; }
         .card { background: white; padding: 30px; border-radius: 20px; box-shadow: 0 10px 25px rgba(0,0,0,0.1); width: 100%; max-width: 450px; text-align: center; }
-        
-        /* Image Preview Area */
-        .img-container { position: relative; width: 100%; overflow: hidden; border-radius: 12px; margin-top: 10px; display: none; background: #000; }
-        #preview { width: 100%; display: block; opacity: 0.8; }
-
-        /* AI Scanning Animation */
-        .scan-bar { 
-            position: absolute; top: 0; left: 0; width: 100%; height: 4px; 
-            background: #00ffcc; box-shadow: 0 0 15px #00ffcc; 
-            display: none; z-index: 10;
-            animation: scan 2s infinite ease-in-out;
-        }
-        @keyframes scan { 0% { top: 0%; } 50% { top: 100%; } 100% { top: 0%; } }
-
-        .upload-zone { border: 2px dashed #3498db; border-radius: 12px; padding: 25px; margin: 20px 0; cursor: pointer; background: #f8fbff; transition: 0.3s; }
-        .upload-zone:hover { border-color: #2980b9; background: #eef7ff; }
-        
-        button { background: #3498db; color: white; border: none; width: 100%; padding: 18px; border-radius: 10px; font-weight: bold; cursor: pointer; font-size: 18px; transition: 0.3s; display: flex; align-items: center; justify-content: center; gap: 10px; }
-        button:hover { background: #2980b9; transform: translateY(-2px); }
-        button:disabled { background: #bdc3c7; cursor: not-allowed; }
-
-        /* Loading Spinner */
-        .spinner { width: 20px; height: 20px; border: 3px solid rgba(255,255,255,0.3); border-top: 3px solid white; border-radius: 50%; animation: spin 0.8s linear infinite; display: none; }
-        @keyframes spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }
-
-        /* Result Section */
-        #result { margin-top: 25px; text-align: left; display: none; animation: fadeIn 0.5s ease-in; }
-        @keyframes fadeIn { from { opacity: 0; } to { opacity: 1; } }
-        
-        .breed-header { background: #3498db; color: white; padding: 15px; border-radius: 10px 10px 0 0; text-align: center; }
-        .breed-name { font-size: 26px; font-weight: 800; display: block; letter-spacing: 1px; }
-        .confidence { font-size: 14px; opacity: 0.9; font-weight: 500; }
-        .info-box { background: #fff; border: 1px solid #dcdfe3; border-top: none; padding: 20px; border-radius: 0 0 10px 10px; font-size: 16px; line-height: 1.6; color: #333; white-space: pre-line; }
-
-        .status-msg { font-size: 13px; color: #7f8c8d; margin-top: 10px; font-style: italic; }
+        .img-container { position: relative; width: 100%; border-radius: 12px; margin-top: 10px; display: none; overflow: hidden; }
+        #preview { width: 100%; display: block; }
+        .scan-bar { position: absolute; top: 0; left: 0; width: 100%; height: 4px; background: #00ffcc; display: none; animation: scan 2s infinite ease-in-out; }
+        @keyframes scan { 0%, 100% { top: 0%; } 50% { top: 100%; } }
+        .upload-zone { border: 2px dashed #3498db; border-radius: 12px; padding: 25px; margin: 20px 0; cursor: pointer; }
+        button { background: #3498db; color: white; border: none; width: 100%; padding: 18px; border-radius: 10px; font-weight: bold; cursor: pointer; }
+        button:disabled { background: #bdc3c7; }
+        #result { margin-top: 25px; text-align: left; display: none; }
+        .info-box { background: #f9f9f9; padding: 15px; border-radius: 10px; border: 1px solid #ddd; white-space: pre-line; }
+        .status-msg { font-size: 14px; color: #e67e22; margin-top: 10px; font-weight: bold; }
     </style>
 </head>
 <body>
 
 <div class="card">
     <h1>🐕 Dog AI Expert</h1>
-    <p>Upload a photo & let the LLM tell the story</p>
-
     <div class="upload-zone" onclick="document.getElementById('inp').click()">
-        <p id="msg">📸 Click to upload dog photo</p>
+        <p id="msg">📸 Click to upload photo</p>
         <input type="file" id="inp" accept="image/*" style="display:none">
         <div class="img-container" id="img-cont">
             <div class="scan-bar" id="scanner"></div>
             <img id="preview">
         </div>
     </div>
-
-    <button id="btn">
-        <span class="spinner" id="loader"></span>
-        <span id="btn-text">Analyze Dog 🦴</span>
-    </button>
-    <p class="status-msg" id="status-hint">First run may take 2-3 mins to download the AI brain.</p>
+    <button id="btn">Analyze Dog 🦴</button>
+    <p class="status-msg" id="status-hint">Ready to go!</p>
 
     <div id="result">
-        <div class="breed-header">
-            <span class="breed-name" id="res-breed">---</span>
-            <span class="confidence" id="res-conf">Confidence: 0%</span>
-        </div>
-        <div class="info-box" id="res-info">Gathering facts...</div>
+        <h2 id="res-breed">---</h2>
+        <p id="res-conf">Confidence: 0%</p>
+        <div class="info-box" id="res-info"></div>
     </div>
 </div>
 
 <script>
-    // Replace this with your Railway URL
     const API = "https://dog-ai-bread-finder-production.up.railway.app";
-    
-    const inp = document.getElementById('inp');
-    const imgCont = document.getElementById('img-cont');
-    const pre = document.getElementById('preview');
-    const scanner = document.getElementById('scanner');
-    const btn = document.getElementById('btn');
-    const loader = document.getElementById('loader');
-    const btnText = document.getElementById('btn-text');
-    const res = document.getElementById('result');
-    const msg = document.getElementById('msg');
-    const resBreed = document.getElementById('res-breed');
-    const resConf = document.getElementById('res-conf');
-    const resInfo = document.getElementById('res-info');
     const statusHint = document.getElementById('status-hint');
+    const btn = document.getElementById('btn');
 
-    // Handle Image Selection
-    inp.onchange = () => {
-        const file = inp.files[0];
+    async function waitForModel() {
+        statusHint.innerText = "Connecting to AI... (Please wait)";
+        while (true) {
+            try {
+                const res = await fetch(`${API}/status`);
+                const data = await res.json();
+                if (data.status === "ready") {
+                    statusHint.innerText = "✅ AI is Online!";
+                    return true;
+                } else {
+                    statusHint.innerText = "⏳ AI is downloading brain (950MB)... Stay here.";
+                }
+            } catch (e) {
+                statusHint.innerText = "📡 Waking up server... (Usually 30s)";
+            }
+            await new Promise(r => setTimeout(r, 4000)); // Check every 4 seconds
+        }
+    }
+
+    document.getElementById('inp').onchange = (e) => {
+        const file = e.target.files[0];
         if (file) {
-            pre.src = URL.createObjectURL(file);
-            imgCont.style.display = 'block';
-            msg.style.display = 'none';
-            res.style.display = 'none';
-            statusHint.innerText = "Ready to analyze!";
+            document.getElementById('preview').src = URL.createObjectURL(file);
+            document.getElementById('img-cont').style.display = 'block';
+            document.getElementById('msg').style.display = 'none';
         }
     };
 
-    // Handle AI Analysis
     btn.onclick = async () => {
-        if (!inp.files[0]) return alert("Bro, select a dog photo first!");
+        const file = document.getElementById('inp').files[0];
+        if (!file) return alert("Select a photo!");
 
-        // Start UI Loading
         btn.disabled = true;
-        loader.style.display = 'inline-block';
-        btnText.innerText = "AI is Thinking...";
-        scanner.style.display = 'block';
-        res.style.display = 'none';
-        statusHint.innerText = "Connecting to Railway server...";
+        document.getElementById('scanner').style.display = 'block';
 
+        // 1. Wait for model to be ready
+        const isReady = await waitForModel();
+        
+        // 2. Now send the image
+        statusHint.innerText = "🧠 Analyzing your dog...";
         const fd = new FormData();
-        fd.append("file", inp.files[0]);
+        fd.append("file", file);
 
         try {
-            // Using AbortSignal.timeout (available in modern browsers) 
-            // set to 10 minutes (600,000 ms) to match Railway's limit
-            const response = await fetch(`${API}/analyze`, { 
-                method: "POST", 
-                body: fd,
-                signal: AbortSignal.timeout(600000) 
-            });
+            const res = await fetch(`${API}/analyze`, { method: "POST", body: fd });
+            const data = await res.json();
             
-            const data = await response.json();
-            
-            if (data.error) {
-                alert("Server Note: " + data.error);
-                statusHint.innerText = "An error occurred.";
-                return;
-            }
-
-            // Display Results
-            res.style.display = 'block';
-            resBreed.innerText = data.breed;
-            resConf.innerText = `Confidence: ${data.confidence}%`;
-            resInfo.innerText = data.info;
-            statusHint.innerText = "Success! Breed identified.";
-
+            document.getElementById('result').style.display = 'block';
+            document.getElementById('res-breed').innerText = data.breed;
+            document.getElementById('res-conf').innerText = `Confidence: ${data.confidence}%`;
+            document.getElementById('res-info').innerText = data.info;
+            statusHint.innerText = "Done!";
         } catch (e) {
-            console.error(e);
-            if (e.name === 'TimeoutError') {
-                alert("Request timed out. The server is likely still downloading the large AI models. Please try again in a minute!");
-            } else {
-                alert("Connection Error. Make sure your Railway server is running and give it time to load the 2GB brain!");
-            }
-            statusHint.innerText = "Connection failed. Retrying later is recommended.";
+            alert("Analysis failed. The model might still be loading. Try again in 10 seconds!");
         } finally {
-            // Reset UI
             btn.disabled = false;
-            loader.style.display = 'none';
-            btnText.innerText = "Analyze Dog 🦴";
-            scanner.style.display = 'none';
+            document.getElementById('scanner').style.display = 'none';
         }
     };
 </script>
