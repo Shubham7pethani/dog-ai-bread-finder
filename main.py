@@ -1,7 +1,4 @@
-import os
-import io
-import json
-import logging
+import os, io, json, logging
 import numpy as np
 import onnxruntime as ort
 from fastapi import FastAPI, UploadFile, File
@@ -22,99 +19,128 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+# ---------------- PATHS ----------------
+MODEL_DIR = "models"
+LABEL_DIR = "labels"
+os.makedirs(MODEL_DIR, exist_ok=True)
+os.makedirs(LABEL_DIR, exist_ok=True)
+
 # ---------------- MODEL CONFIG ----------------
-MODEL_REPO = "akahana/dog-cat-breeds-onnx"
-MODEL_FILE = "model.onnx"
-LABEL_FILE = "labels.json"
+MODELS = {
+    "dogcat": {
+        "repo": "onnx/models",
+        "file": "mobilenetv3-small-100.onnx"
+    },
+    "dog": {
+        "repo": "keras-io/stanford-dogs-onnx",
+        "file": "efficientnet_b0_stanford_dogs.onnx",
+        "labels_repo": "keras-io/stanford-dogs-onnx",
+        "labels_file": "dog_labels.json"
+    },
+    "cat": {
+        "repo": "keras-io/oxford-pets-onnx",
+        "file": "efficientnet_b0_oxford_pets.onnx",
+        "labels_repo": "keras-io/oxford-pets-onnx",
+        "labels_file": "cat_labels.json"
+    }
+}
 
-MODEL_PATH = f"models/{MODEL_FILE}"
-LABELS_PATH = f"models/{LABEL_FILE}"
+sessions = {}
+labels = {}
 
-session = None
-labels = []
-
-# ---------------- DOWNLOAD MODEL ----------------
-def download_model():
-    os.makedirs("models", exist_ok=True)
-
-    if not os.path.exists(MODEL_PATH):
-        logger.info("🚀 Downloading Dog + Cat Breed ONNX model...")
-        model_path = hf_hub_download(
-            repo_id=MODEL_REPO,
-            filename=MODEL_FILE,
-            local_dir="models",
+# ---------------- HELPERS ----------------
+def download_file(repo, filename, folder):
+    path = os.path.join(folder, filename)
+    if not os.path.exists(path):
+        logger.info(f"⬇ Downloading {filename}")
+        downloaded = hf_hub_download(
+            repo_id=repo,
+            filename=filename,
+            local_dir=folder,
             local_dir_use_symlinks=False
         )
-        os.rename(model_path, MODEL_PATH)
-        logger.info("✅ Model downloaded")
+        os.rename(downloaded, path)
+    return path
 
-    if not os.path.exists(LABELS_PATH):
-        logger.info("📥 Downloading breed labels...")
-        labels_path = hf_hub_download(
-            repo_id=MODEL_REPO,
-            filename=LABEL_FILE,
-            local_dir="models",
-            local_dir_use_symlinks=False
-        )
-        os.rename(labels_path, LABELS_PATH)
-        logger.info("✅ Labels downloaded")
+def preprocess(img: Image.Image):
+    img = img.resize((224, 224))
+    img = np.array(img).astype(np.float32) / 255.0
+    img = img.transpose(2, 0, 1)
+    return np.expand_dims(img, axis=0)
 
 # ---------------- STARTUP ----------------
 @app.on_event("startup")
 async def startup():
-    global session, labels
+    logger.info("🚀 Starting Pet AI Engine")
 
-    download_model()
-
-    session = ort.InferenceSession(
-        MODEL_PATH,
-        providers=["CPUExecutionProvider"]
+    # Dog vs Cat
+    dogcat_path = download_file(
+        MODELS["dogcat"]["repo"],
+        MODELS["dogcat"]["file"],
+        MODEL_DIR
     )
+    sessions["dogcat"] = ort.InferenceSession(dogcat_path, providers=["CPUExecutionProvider"])
 
-    with open(LABELS_PATH, "r") as f:
-        labels = json.load(f)
+    # Dog Breeds
+    dog_model_path = download_file(
+        MODELS["dog"]["repo"],
+        MODELS["dog"]["file"],
+        MODEL_DIR
+    )
+    sessions["dog"] = ort.InferenceSession(dog_model_path, providers=["CPUExecutionProvider"])
 
-    logger.info("🐶🐱 Dog + Cat Breed AI is ONLINE")
+    dog_labels_path = download_file(
+        MODELS["dog"]["labels_repo"],
+        MODELS["dog"]["labels_file"],
+        LABEL_DIR
+    )
+    labels["dog"] = json.load(open(dog_labels_path))
 
-# ---------------- IMAGE UTILS ----------------
-def preprocess_image(image: Image.Image):
-    image = image.resize((224, 224))
-    img = np.array(image).astype(np.float32) / 255.0
+    # Cat Breeds
+    cat_model_path = download_file(
+        MODELS["cat"]["repo"],
+        MODELS["cat"]["file"],
+        MODEL_DIR
+    )
+    sessions["cat"] = ort.InferenceSession(cat_model_path, providers=["CPUExecutionProvider"])
 
-    mean = np.array([0.485, 0.456, 0.406])
-    std = np.array([0.229, 0.224, 0.225])
+    cat_labels_path = download_file(
+        MODELS["cat"]["labels_repo"],
+        MODELS["cat"]["labels_file"],
+        LABEL_DIR
+    )
+    labels["cat"] = json.load(open(cat_labels_path))
 
-    img = (img - mean) / std
-    img = img.transpose(2, 0, 1)
-    img = np.expand_dims(img, axis=0)
-
-    return img
+    logger.info("🐶🐱 Pet Breed AI READY")
 
 # ---------------- API ----------------
 @app.post("/analyze")
 async def analyze(file: UploadFile = File(...)):
-    if session is None:
-        return {"error": "Model not loaded"}
-
     try:
-        content = await file.read()
-        image = Image.open(io.BytesIO(content)).convert("RGB")
+        img = Image.open(io.BytesIO(await file.read())).convert("RGB")
+        x = preprocess(img)
 
-        input_tensor = preprocess_image(image)
+        # Step 1: Dog or Cat
+        dc_input = sessions["dogcat"].get_inputs()[0].name
+        dc_out = sessions["dogcat"].run(None, {dc_input: x})[0]
+        is_dog = int(np.argmax(dc_out)) == 1
 
-        input_name = session.get_inputs()[0].name
-        output = session.run(None, {input_name: input_tensor})[0][0]
-
-        probs = np.exp(output - np.max(output))
-        probs /= probs.sum()
-
-        idx = int(np.argmax(probs))
-        label = labels[idx]
-
-        return {
-            "prediction": label,
-            "confidence": round(float(probs[idx]) * 100, 2)
-        }
+        if is_dog:
+            dog_input = sessions["dog"].get_inputs()[0].name
+            out = sessions["dog"].run(None, {dog_input: x})[0][0]
+            idx = int(np.argmax(out))
+            return {
+                "type": "dog",
+                "breed": labels["dog"][idx]
+            }
+        else:
+            cat_input = sessions["cat"].get_inputs()[0].name
+            out = sessions["cat"].run(None, {cat_input: x})[0][0]
+            idx = int(np.argmax(out))
+            return {
+                "type": "cat",
+                "breed": labels["cat"][idx]
+            }
 
     except Exception as e:
         logger.error(e)
