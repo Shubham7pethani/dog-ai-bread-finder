@@ -7,3 +7,6 @@ numpy
 transformers
 torch
 torchvision
+accelerate
+bitsandbytes
+sentencepiece
