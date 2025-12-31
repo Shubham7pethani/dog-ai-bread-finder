@@ -2,9 +2,10 @@ import os
 import io
 import logging
 import asyncio
+from pathlib import Path
 from fastapi import FastAPI, UploadFile, File, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import JSONResponse
+from fastapi.responses import JSONResponse, FileResponse
 from PIL import Image
 from transformers import AutoImageProcessor, AutoModelForImageClassification, pipeline
 import torch
@@ -160,4 +161,11 @@ async def facts(breed: str):
 
 @app.get("/")
 async def root():
+    return FileResponse(
+        str(Path(__file__).with_name("index.html")),
+        headers={"Cache-Control": "no-store"},
+    )
+
+@app.get("/health")
+async def health():
     return {"status": "alive"}

@@ -114,7 +114,10 @@
     </div>
 
     <script>
-      const API = "https://dog-ai-bread-finder-production.up.railway.app";
+      const API =
+        window.location.origin && window.location.origin !== "null"
+          ? window.location.origin
+          : "https://dog-ai-bread-finder-production.up.railway.app";
       const statusHint = document.getElementById("status-hint");
       const btn = document.getElementById("btn");
 
