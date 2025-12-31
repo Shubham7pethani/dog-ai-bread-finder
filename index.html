@@ -3,73 +3,24 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Dog & Cat Breed AI</title>
+    <title>Dog Breed AI</title>
     <style>
-        body {
-            font-family: 'Segoe UI', sans-serif;
-            display: flex;
-            justify-content: center;
-            background-color: #f4f7f6;
-            padding: 20px;
-        }
-        .card {
-            background: white;
-            padding: 30px;
-            border-radius: 15px;
-            box-shadow: 0 4px 15px rgba(0,0,0,0.1);
-            width: 100%;
-            max-width: 420px;
-            text-align: center;
-        }
-        .upload-zone {
-            border: 2px dashed #3498db;
-            border-radius: 10px;
-            padding: 20px;
-            margin: 20px 0;
-            cursor: pointer;
-        }
-        #preview {
-            width: 100%;
-            border-radius: 8px;
-            display: none;
-            margin-top: 10px;
-        }
-        button {
-            background: #3498db;
-            color: white;
-            border: none;
-            width: 100%;
-            padding: 12px;
-            border-radius: 8px;
-            font-weight: bold;
-            cursor: pointer;
-            font-size: 16px;
-        }
-        button:disabled {
-            opacity: 0.7;
-            cursor: not-allowed;
-        }
-        #result {
-            margin-top: 20px;
-            padding: 15px;
-            border-radius: 8px;
-            display: none;
-            background: #e8f4fd;
-            color: #2c3e50;
-        }
-        .breed {
-            font-size: 22px;
-            font-weight: bold;
-            color: #2980b9;
-            display: block;
-        }
+        body { font-family: 'Segoe UI', sans-serif; display: flex; justify-content: center; background-color: #f4f7f6; padding: 20px; }
+        .card { background: white; padding: 30px; border-radius: 15px; box-shadow: 0 4px 15px rgba(0,0,0,0.1); width: 100%; max-width: 420px; text-align: center; }
+        .upload-zone { border: 2px dashed #3498db; border-radius: 10px; padding: 20px; margin: 20px 0; cursor: pointer; }
+        #preview { width: 100%; border-radius: 8px; display: none; margin-top: 10px; }
+        button { background: #3498db; color: white; border: none; width: 100%; padding: 12px; border-radius: 8px; font-weight: bold; cursor: pointer; font-size: 16px; transition: 0.3s; }
+        button:disabled { background: #95a5a6; cursor: not-allowed; }
+        #result { margin-top: 20px; padding: 15px; border-radius: 8px; display: none; background: #e8f4fd; color: #2c3e50; border: 1px solid #3498db; }
+        .breed { font-size: 22px; font-weight: bold; color: #2980b9; display: block; }
+        .loader-text { color: #e67e22; font-weight: bold; font-size: 14px; margin-top: 5px; display: block; }
     </style>
 </head>
 <body>
 
 <div class="card">
-    <h1>🐶🐱 Dog & Cat Scanner</h1>
-    <p>Upload an image to identify the breed</p>
+    <h1>🐶 Dog Breed AI</h1>
+    <p>Upload a dog photo to find its breed</p>
 
     <div class="upload-zone" onclick="document.getElementById('inp').click()">
         <p id="msg">Click to select photo</p>
@@ -82,6 +33,7 @@
 </div>
 
 <script>
+    // MAKE SURE THIS URL IS CORRECT
     const API = "https://dog-ai-bread-finder-production.up.railway.app";
 
     const inp = document.getElementById('inp');
@@ -96,6 +48,7 @@
             pre.src = URL.createObjectURL(file);
             pre.style.display = 'block';
             msg.style.display = 'none';
+            res.style.display = 'none';
         }
     };
 
@@ -106,7 +59,7 @@
         }
 
         btn.disabled = true;
-        btn.innerText = "Scanning... 🔍";
+        btn.innerHTML = `Scanning... 🔍 <span class="loader-text">(Wait 60s for first scan)</span>`;
         res.style.display = 'none';
 
         const fd = new FormData();
@@ -119,21 +72,26 @@
             });
 
             const data = await r.json();
-            if (data.error) throw new Error(data.error);
+            
+            if (data.error) {
+                alert("AI Error: " + data.error);
+                return;
+            }
 
+            // FIXED: Changed data.prediction to data.breed to match Python
             res.style.display = 'block';
             res.innerHTML = `
-                <span class="breed">${data.prediction}</span>
-                <p>Confidence: <strong>${data.confidence.toFixed(2)}%</strong></p>
+                <span class="breed">${data.breed}</span>
+                <p>Confidence: <strong>${data.confidence}%</strong></p>
             `;
         } catch (e) {
-            alert("Error: " + e.message);
+            alert("Connection Error: Make sure your Railway app is running!");
+            console.error(e);
         } finally {
             btn.disabled = false;
             btn.innerText = "Identify Breed";
         }
     };
 </script>
-
 </body>
 </html>
