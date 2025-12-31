@@ -3,6 +3,10 @@ import io
 import logging
 import asyncio
 from pathlib import Path
+import json
+from urllib.parse import quote
+from urllib.request import Request, urlopen
+from urllib.error import URLError, HTTPError
 from fastapi import FastAPI, UploadFile, File, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse, FileResponse
@@ -27,6 +31,8 @@ vision_processor = None
 text_pipeline = None
 is_loading = False
 llm_is_loading = False
+breed_info_cache = {}
+wiki_cache = {}
 
 # ---------------- LIGHTWEIGHT LOADING ----------------
 
@@ -66,8 +72,18 @@ def load_llm():
 
 def generate_breed_info(breed: str) -> str:
     if KNOWLEDGE_TASK == "text2text-generation":
-        prompt = f"Tell me 3 quick facts about the {breed} dog breed."
-        response = text_pipeline(prompt, max_new_tokens=120)
+        prompt = (
+            f"Write a detailed guide about the {breed} dog breed with headings. "
+            "Include: Overview, Temperament, Exercise needs, Grooming, Training tips, "
+            "Common health issues, Good for families?, and 3 fun facts."
+        )
+        response = text_pipeline(
+            prompt,
+            max_new_tokens=260,
+            min_new_tokens=140,
+            num_beams=4,
+            do_sample=False,
+        )
         return response[0]["generated_text"].strip()
 
     prompt = f"""
@@ -76,6 +92,43 @@ User: Tell me 3 quick facts about the {breed} dog breed.
 Assistant: """
     response = text_pipeline(prompt, max_new_tokens=120, do_sample=True, temperature=0.7)
     return response[0]["generated_text"].split("Assistant: ")[-1].strip()
+
+def fetch_wikipedia_facts(breed: str) -> str | None:
+    key = breed.strip().lower()
+    if not key:
+        return None
+    if key in wiki_cache:
+        return wiki_cache[key]
+
+    title = quote(breed.replace(" ", "_"))
+    url = f"https://en.wikipedia.org/api/rest_v1/page/summary/{title}"
+    try:
+        req = Request(
+            url,
+            headers={
+                "User-Agent": "dog-ai-breed-finder/1.0 (contact: none)",
+                "Accept": "application/json",
+            },
+        )
+        with urlopen(req, timeout=3) as resp:
+            payload = resp.read().decode("utf-8")
+        data = json.loads(payload)
+        extract = (data.get("extract") or "").strip()
+        if not extract:
+            return None
+
+        extra = (
+            "\n\nOwner quick guide:\n"
+            "- Exercise: daily walks + play, mental stimulation.\n"
+            "- Training: short positive sessions, reward-based.\n"
+            "- Grooming: brush regularly, keep ears clean.\n"
+            "- Health: regular vet checkups and vaccinations.\n"
+        )
+        text = extract + extra
+        wiki_cache[key] = text
+        return text
+    except (HTTPError, URLError, TimeoutError, ValueError):
+        return None
 
 @app.on_event("startup")
 async def startup_event():
@@ -148,16 +201,35 @@ async def facts(breed: str):
     if not breed:
         raise HTTPException(status_code=400, detail="MISSING_BREED")
 
+    breed_key = breed.strip().lower()
+    if breed_key in breed_info_cache:
+        return {
+            "status": "ready",
+            "llm_ready": True,
+            "source": "cache",
+            "breed": breed,
+            "info": breed_info_cache[breed_key],
+        }
+
     if not text_pipeline:
         if not llm_is_loading:
             asyncio.create_task(asyncio.to_thread(load_llm))
-        return JSONResponse(
-            status_code=202,
-            content={"status": "loading", "llm_ready": False},
-        )
+
+        wiki = fetch_wikipedia_facts(breed)
+        if wiki:
+            return {
+                "status": "ready",
+                "llm_ready": False,
+                "source": "wiki",
+                "breed": breed,
+                "info": wiki,
+            }
+
+        return JSONResponse(status_code=202, content={"status": "loading", "llm_ready": False})
 
     info_text = generate_breed_info(breed)
-    return {"status": "ready", "llm_ready": True, "breed": breed, "info": info_text}
+    breed_info_cache[breed_key] = info_text
+    return {"status": "ready", "llm_ready": True, "source": "llm", "breed": breed, "info": info_text}
 
 @app.get("/")
 async def root():

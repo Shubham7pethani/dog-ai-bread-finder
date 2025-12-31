@@ -114,10 +114,23 @@
     </div>
 
     <script>
+      const DEFAULT_API =
+        "https://dog-ai-bread-finder-production.up.railway.app";
+      const apiFromQuery = new URLSearchParams(window.location.search).get(
+        "api"
+      );
+      const apiFromGlobal = window.DOG_API;
+      const isLocalhost =
+        window.location.hostname === "localhost" ||
+        window.location.hostname === "127.0.0.1";
       const API =
-        window.location.origin && window.location.origin !== "null"
+        apiFromQuery ||
+        apiFromGlobal ||
+        (window.location.origin &&
+        window.location.origin !== "null" &&
+        !isLocalhost
           ? window.location.origin
-          : "https://dog-ai-bread-finder-production.up.railway.app";
+          : DEFAULT_API);
       const statusHint = document.getElementById("status-hint");
       const btn = document.getElementById("btn");
 
@@ -221,8 +234,6 @@
           statusHint.innerText =
             "⏳ Downloading brain (first time only)... Stay here.";
 
-          // Wait until LLM is ready, then fetch facts
-          await waitForLlmReady();
           statusHint.innerText = "🧠 Getting breed facts...";
 
           const fetchFacts = async () => {
@@ -233,13 +244,27 @@
             return { factsRes, factsData };
           };
 
+          let shownQuickInfo = false;
           while (true) {
             const { factsRes, factsData } = await fetchFacts();
+
             if (factsRes.ok && factsData && factsData.info) {
               document.getElementById("res-info").innerText = factsData.info;
-              statusHint.innerText = "Done!";
-              break;
+
+              if (factsData.llm_ready) {
+                statusHint.innerText = "Done!";
+                break;
+              }
+
+              shownQuickInfo = true;
+              statusHint.innerText =
+                "⏳ Showing quick info. Improving answer...";
+            } else {
+              statusHint.innerText = shownQuickInfo
+                ? "⏳ Improving answer..."
+                : "⏳ Downloading brain (first time only)... Stay here.";
             }
+
             await sleep(2000);
           }
         } catch (e) {
