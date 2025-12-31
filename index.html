@@ -3,66 +3,128 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Dog Breed AI 120</title>
+    <title>Dog & Cat Breed AI</title>
     <style>
-        body { font-family: 'Segoe UI', sans-serif; display: flex; justify-content: center; background-color: #f4f7f6; padding: 20px; }
-        .card { background: white; padding: 30px; border-radius: 15px; box-shadow: 0 4px 15px rgba(0,0,0,0.1); width: 100%; max-width: 400px; text-align: center; }
-        .upload-zone { border: 2px dashed #3498db; border-radius: 10px; padding: 20px; margin: 20px 0; cursor: pointer; position: relative; }
-        #preview { width: 100%; border-radius: 8px; display: none; margin-top: 10px; }
-        button { background: #3498db; color: white; border: none; width: 100%; padding: 12px; border-radius: 8px; font-weight: bold; cursor: pointer; }
-        #result { margin-top: 20px; padding: 15px; border-radius: 8px; display: none; background: #e8f4fd; color: #2c3e50; }
-        .breed { font-size: 24px; font-weight: bold; color: #2980b9; display: block; }
+        body {
+            font-family: 'Segoe UI', sans-serif;
+            display: flex;
+            justify-content: center;
+            background-color: #f4f7f6;
+            padding: 20px;
+        }
+        .card {
+            background: white;
+            padding: 30px;
+            border-radius: 15px;
+            box-shadow: 0 4px 15px rgba(0,0,0,0.1);
+            width: 100%;
+            max-width: 420px;
+            text-align: center;
+        }
+        .upload-zone {
+            border: 2px dashed #3498db;
+            border-radius: 10px;
+            padding: 20px;
+            margin: 20px 0;
+            cursor: pointer;
+        }
+        #preview {
+            width: 100%;
+            border-radius: 8px;
+            display: none;
+            margin-top: 10px;
+        }
+        button {
+            background: #3498db;
+            color: white;
+            border: none;
+            width: 100%;
+            padding: 12px;
+            border-radius: 8px;
+            font-weight: bold;
+            cursor: pointer;
+            font-size: 16px;
+        }
+        button:disabled {
+            opacity: 0.7;
+            cursor: not-allowed;
+        }
+        #result {
+            margin-top: 20px;
+            padding: 15px;
+            border-radius: 8px;
+            display: none;
+            background: #e8f4fd;
+            color: #2c3e50;
+        }
+        .breed {
+            font-size: 22px;
+            font-weight: bold;
+            color: #2980b9;
+            display: block;
+        }
     </style>
 </head>
 <body>
 
 <div class="card">
-    <h1>🐕 Dog Scanner</h1>
+    <h1>🐶🐱 Dog & Cat Scanner</h1>
+    <p>Upload an image to identify the breed</p>
+
     <div class="upload-zone" onclick="document.getElementById('inp').click()">
         <p id="msg">Click to select photo</p>
         <input type="file" id="inp" accept="image/*" style="display:none">
         <img id="preview">
     </div>
+
     <button id="btn">Identify Breed</button>
     <div id="result"></div>
 </div>
 
 <script>
     const API = "https://dog-ai-bread-finder-production.up.railway.app";
+
     const inp = document.getElementById('inp');
     const pre = document.getElementById('preview');
     const btn = document.getElementById('btn');
     const res = document.getElementById('result');
+    const msg = document.getElementById('msg');
 
     inp.onchange = () => {
         const file = inp.files[0];
         if (file) {
             pre.src = URL.createObjectURL(file);
             pre.style.display = 'block';
-            document.getElementById('msg').style.display = 'none';
+            msg.style.display = 'none';
         }
     };
 
     btn.onclick = async () => {
-        if(!inp.files[0]) return alert("Select a photo!");
-        
+        if (!inp.files[0]) {
+            alert("Please select an image first!");
+            return;
+        }
+
         btn.disabled = true;
-        btn.innerText = "Scanning... 🔎";
+        btn.innerText = "Scanning... 🔍";
         res.style.display = 'none';
 
         const fd = new FormData();
         fd.append("file", inp.files[0]);
 
         try {
-            const r = await fetch(`${API}/analyze`, { method: "POST", body: fd });
+            const r = await fetch(`${API}/analyze`, {
+                method: "POST",
+                body: fd
+            });
+
             const data = await r.json();
-            
-            if(data.error) throw new Error(data.error);
+            if (data.error) throw new Error(data.error);
 
             res.style.display = 'block';
             res.innerHTML = `
-                <span class="breed">${data.breed}</span>
-                <p>Confidence: <strong>${data.confidence.toFixed(1)}%</strong></p>
+                <span class="breed">${data.prediction}</span>
+                <p>Confidence: <strong>${data.confidence.toFixed(2)}%</strong></p>
             `;
         } catch (e) {
             alert("Error: " + e.message);
@@ -72,5 +134,6 @@
         }
     };
 </script>
+
 </body>
 </html>
