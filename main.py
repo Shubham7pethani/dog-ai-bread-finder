@@ -9,7 +9,6 @@ from fastapi.middleware.cors import CORSMiddleware
 from PIL import Image
 from huggingface_hub import hf_hub_download, list_repo_files
 
-# ---------------- Setup ----------------
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger("dog-ai")
 
@@ -23,74 +22,60 @@ app = FastAPI()
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"], 
-    allow_methods=["*"],
+    allow_methods=["GET", "POST", "OPTIONS"],
     allow_headers=["*"],
 )
 
 session: ort.InferenceSession | None = None
 
-# ---------------- The Model Logic ----------------
-
 def download_specific_model():
-    """Downloads ONLY the ScottMueller model."""
     if not MODEL_PATH.exists():
         repo_id = "ScottMueller/Cat_Dog_Breeds.ONNX"
-        logger.info(f"🚀 Accessing repo: {repo_id}")
-        
         try:
-            # First, let's see what the file is actually called in that repo
             files = list_repo_files(repo_id)
-            # Find the one that ends with .onnx (case insensitive)
             onnx_filename = next((f for f in files if f.lower().endswith(".onnx")), None)
-            
-            if not onnx_filename:
-                raise FileNotFoundError(f"Could not find any .onnx file in {repo_id}")
-
-            logger.info(f"📂 Found target file: {onnx_filename}. Downloading...")
-
-            # Download that exact file
-            downloaded_path = hf_hub_download(
-                repo_id=repo_id,
-                filename=onnx_filename,
-                local_dir=str(MODEL_DIR)
-            )
-            
-            # Rename it to dog_breed.onnx for our local code
+            downloaded_path = hf_hub_download(repo_id=repo_id, filename=onnx_filename, local_dir=str(MODEL_DIR))
             if os.path.exists(MODEL_PATH): os.remove(MODEL_PATH)
             os.rename(downloaded_path, str(MODEL_PATH))
-            logger.info("✅ Specific model downloaded successfully!")
-            
+            logger.info("✅ Model Ready!")
         except Exception as e:
-            logger.error(f"❌ Error downloading that model: {e}")
-            raise e
+            logger.error(f"❌ Download failed: {e}")
 
 @app.on_event("startup")
 async def startup_event():
     global session
     download_specific_model()
     if MODEL_PATH.exists():
-        logger.info("🔄 Loading ONNX session...")
         session = ort.InferenceSession(str(MODEL_PATH), providers=["CPUExecutionProvider"])
-        logger.info("✨ AI Engine Ready!")
-
-# ---------------- Routes ----------------
+        logger.info("✨ AI Engine Online!")
 
 @app.get("/")
 def status():
-    return {"status": "online", "model": "ScottMueller/Cat_Dog_Breeds.ONNX", "ready": session is not None}
+    return {"status": "online", "ready": session is not None}
 
 @app.post("/analyze")
 async def analyze(file: UploadFile = File(...)):
     if session is None: return {"error": "Model not loaded"}
     try:
         content = await file.read()
+        # ResNet18 expects 224x224
         image = Image.open(io.BytesIO(content)).convert("RGB").resize((224, 224))
         img = np.array(image).astype(np.float32) / 255.0
+        # Transpose to (Channels, Height, Width)
         img = np.transpose(img, (2, 0, 1))
+        # Add batch dimension
         img = np.expand_dims(img, axis=0)
         
-        res = session.run(None, {session.get_inputs()[0].name: img})
-        idx = int(np.argmax(res[0][0]))
-        return {"class_index": idx, "confidence": float(res[0][0][idx])}
+        input_name = session.get_inputs()[0].name
+        res = session.run(None, {input_name: img})
+        
+        # Get the top prediction
+        probs = res[0][0]
+        idx = int(np.argmax(probs))
+        # Some models use raw scores, we ensure it's a standard float
+        confidence = float(probs[idx]) 
+        
+        return {"class_index": idx, "confidence": confidence}
     except Exception as e:
+        logger.error(f"Error: {e}")
         return {"error": str(e)}
